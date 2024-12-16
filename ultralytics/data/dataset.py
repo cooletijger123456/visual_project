@@ -305,6 +305,8 @@ class GroundingDataset(YOLODataset):
         
         for ann in annotations["annotations"]:
             img_to_anns[ann["image_id"]].append(ann)
+            
+        instance_count = 0
         for img_id, anns in TQDM(img_to_anns.items(), desc=f"Reading annotations {self.json_file}"):
             img = images[f"{img_id:d}"]
             h, w, f = img["height"], img["width"], img["file_name"]
@@ -348,6 +350,12 @@ class GroundingDataset(YOLODataset):
                     "texts": texts,
                 }
             )
+            instance_count += lb.shape[0]
+        # Verify data
+        if "final_mixed_train_no_coco.json" in self.json_file:
+            assert(instance_count == 3681236)
+        elif "final_flickr_separateGT_train.json" in self.json_file:
+            assert(instance_count == 640704)
         return labels
 
     def build_transforms(self, hyp=None):
