@@ -55,9 +55,9 @@ class WorldTrainerFromScratch(WorldTrainer):
         """
         gs = max(int(de_parallel(self.model).stride.max() if self.model else 0), 32)
         if mode != "train":
-            return build_yolo_dataset(self.args, img_path, batch, self.data, mode=mode, rect=mode == "val", stride=gs)
+            return build_yolo_dataset(self.args, img_path, batch, self.data, mode=mode, rect=False, stride=gs)
         dataset = [
-            build_yolo_dataset(self.args, im_path, batch, self.data, stride=gs, multi_modal=True)
+            build_yolo_dataset(self.args, im_path, batch, self.training_data[im_path], stride=gs, multi_modal=True)
             if isinstance(im_path, str)
             else build_grounding(self.args, im_path["img_path"], im_path["json_file"], batch, stride=gs)
             for im_path in img_path
@@ -94,7 +94,12 @@ class WorldTrainerFromScratch(WorldTrainer):
         # NOTE: to make training work properly, set `nc` and `names`
         final_data["nc"] = data["val"][0]["nc"]
         final_data["names"] = data["val"][0]["names"]
+        # NOTE: add path with lvis path
+        final_data["path"] = data["val"][0]["path"]
         self.data = final_data
+        self.training_data = {}
+        for d in data["train"]:
+            self.training_data[d["train"]] = d
         return final_data["train"], final_data["val"][0]
 
     def plot_training_labels(self):

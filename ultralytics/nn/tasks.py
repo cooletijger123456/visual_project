@@ -82,6 +82,7 @@ from ultralytics.utils.torch_utils import (
     model_info,
     scale_img,
     time_sync,
+    smart_inference_mode
 )
 
 try:
@@ -606,6 +607,7 @@ class WorldModel(DetectionModel):
         self.clip_model = None  # CLIP model placeholder
         super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
 
+    @smart_inference_mode()
     def set_classes(self, text, batch=80, cache_clip_model=True):
         """Set classes in advance so that model could do offline-inference without clip model."""
         try:

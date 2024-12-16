@@ -277,6 +277,7 @@ class YOLOMultiModalDataset(YOLODataset):
             transforms.insert(-1, RandomLoadText(max_samples=min(self.data["nc"], 80), padding=True))
         return transforms
 
+from ultralytics.utils.ops import xyxy2xywhn
 
 class GroundingDataset(YOLODataset):
     """Handles object detection tasks by loading annotations from a specified JSON file, supporting YOLO format."""
@@ -298,7 +299,10 @@ class GroundingDataset(YOLODataset):
         with open(self.json_file) as f:
             annotations = json.load(f)
         images = {f'{x["id"]:d}': x for x in annotations["images"]}
-        img_to_anns = defaultdict(list)
+        
+        # Note: retain images without annotations
+        img_to_anns = {int(k): [] for k in images.keys()}
+        
         for ann in annotations["annotations"]:
             img_to_anns[ann["image_id"]].append(ann)
         for img_id, anns in TQDM(img_to_anns.items(), desc=f"Reading annotations {self.json_file}"):
@@ -314,10 +318,13 @@ class GroundingDataset(YOLODataset):
             for ann in anns:
                 if ann["iscrowd"]:
                     continue
-                box = np.array(ann["bbox"], dtype=np.float32)
-                box[:2] += box[2:] / 2
-                box[[0, 2]] /= float(w)
-                box[[1, 3]] /= float(h)
+                box = np.array(ann["bbox"], dtype=np.float64)
+                
+                box[2] += box[0]
+                box[3] += box[1]
+                
+                box = xyxy2xywhn(box, w=float(w), h=float(h), clip=True)
+                
                 if box[2] <= 0 or box[3] <= 0:
                     continue
 
