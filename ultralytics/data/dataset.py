@@ -292,8 +292,29 @@ class GroundingDataset(YOLODataset):
         """The image files would be read in `get_labels` function, return empty list here."""
         return []
 
+    def verify_labels(self, labels):
+        instance_count = 0
+        for label in labels:
+            instance_count += label["bboxes"].shape[0]
+        
+        if "final_mixed_train_no_coco.json" in self.json_file:
+            assert(instance_count == 3681236)
+        elif "final_flickr_separateGT_train.json" in self.json_file:
+            assert(instance_count == 640704)
+    
     def get_labels(self):
         """Loads annotations from a JSON file, filters, and normalizes bounding boxes for each image."""
+        import os
+        
+        cache_path = Path(self.json_file).with_suffix('.cache')
+        if os.path.exists(cache_path):
+            labels = np.load(str(cache_path), allow_pickle=True)
+            self.verify_labels(labels)
+            self.im_files = [str(label["im_file"]) for label in labels]
+            if LOCAL_RANK in {-1, 0}:
+                LOGGER.info(f"Load {self.json_file} from cache file {cache_path}") 
+            return labels
+        
         labels = []
         LOGGER.info("Loading annotation file...")
         with open(self.json_file) as f:
@@ -306,7 +327,6 @@ class GroundingDataset(YOLODataset):
         for ann in annotations["annotations"]:
             img_to_anns[ann["image_id"]].append(ann)
             
-        instance_count = 0
         for img_id, anns in TQDM(img_to_anns.items(), desc=f"Reading annotations {self.json_file}"):
             img = images[f"{img_id:d}"]
             h, w, f = img["height"], img["width"], img["file_name"]
@@ -350,12 +370,11 @@ class GroundingDataset(YOLODataset):
                     "texts": texts,
                 }
             )
-            instance_count += lb.shape[0]
-        # Verify data
-        if "final_mixed_train_no_coco.json" in self.json_file:
-            assert(instance_count == 3681236)
-        elif "final_flickr_separateGT_train.json" in self.json_file:
-            assert(instance_count == 640704)
+        self.verify_labels(labels)
+        if LOCAL_RANK in {-1, 0}:
+            np.save(str(cache_path), labels)
+            cache_path.with_suffix(".cache.npy").rename(cache_path)
+            LOGGER.info(f"Save {self.json_file} cache file {cache_path}") 
         return labels
 
     def build_transforms(self, hyp=None):
