@@ -225,8 +225,8 @@ class ResidualAttentionBlock(nn.Module):
         """Compute scaled dot-product attention using query, key, and value tensors, with optional attention mask
         adjustment.
         """
-        self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
-        return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
+        attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device)[:x.shape[0], :x.shape[0]] if self.attn_mask is not None else None
+        return self.attn(x, x, x, need_weights=False, attn_mask=attn_mask)[0]
 
     def forward(self, x: torch.Tensor):
         """Performs forward pass through the network, applying attention and MLP layers sequentially."""
@@ -414,8 +414,8 @@ class CLIP(nn.Module):
     def encode_text(self, text):
         """Encodes input text using the token embedding and converts it to the specified data type."""
         x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
-
-        x = x + self.positional_embedding.type(self.dtype)
+        
+        x = x + self.positional_embedding.type(self.dtype)[:x.shape[1]]
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD

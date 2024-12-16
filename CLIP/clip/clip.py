@@ -246,6 +246,9 @@ def tokenize(
     sot_token = _tokenizer.encoder["<|startoftext|>"]
     eot_token = _tokenizer.encoder["<|endoftext|>"]
     all_tokens = [[sot_token] + _tokenizer.encode(text) + [eot_token] for text in texts]
+    
+    # NOTE: CLIP zero padding for faster training.
+    context_length = min(context_length, max(len(tokens) for tokens in all_tokens))
     result = torch.zeros(
         len(all_tokens),
         context_length,
