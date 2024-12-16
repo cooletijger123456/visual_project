@@ -1,7 +1,8 @@
 set -e
 set -x
 
-conda create -n yoloworld python=3.10
+conda create -n yoloworld python=3.10 -y
+conda activate yoloworld
 
 pip install -r requirements.txt
 pip install -e .
