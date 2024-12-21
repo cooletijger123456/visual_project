@@ -2280,7 +2280,7 @@ class RandomLoadText:
                 # texts += [self.padding_value] * num_padding
                 pair_scores = txt_feats @ self.global_grounding_neg_embeddings.T
                 pair_scores = pair_scores.amax(dim=0)
-                pad_net_cat_indexs = np.array(torch.where(pair_scores < 0.8)[0])
+                pad_net_cat_indexs = np.array(torch.where(pair_scores < 0.6)[0])
                 pad_net_cat_indexs = np.random.choice(pad_net_cat_indexs, size=num_padding, replace=False)
                 
                 pad_net_cat_embeddings = self.global_grounding_neg_embeddings[pad_net_cat_indexs]

@@ -38,14 +38,6 @@ class WorldTrainer(yolo.detect.DetectionTrainer):
             overrides = {}
         super().__init__(cfg, overrides, _callbacks)
 
-        # Import and assign clip
-        try:
-            import clip
-        except ImportError:
-            checks.check_requirements("git+https://github.com/ultralytics/CLIP.git")
-            import clip
-        self.clip = clip
-        
     def get_model(self, cfg=None, weights=None, verbose=True):
         """Return WorldModel initialized with specified config and weights."""
         # NOTE: This `nc` here is the max number of different text samples in one image, rather than the actual `nc`.

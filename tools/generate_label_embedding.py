@@ -1,22 +1,22 @@
 import numpy as np
 from ultralytics.utils import yaml_load
-import clip
 from ultralytics.utils.torch_utils import smart_inference_mode
 import torch
 from tqdm import tqdm
 import os
+from ultralytics.nn.text_model import build_text_model
 
 @smart_inference_mode()
 def generate_label_embedding(texts, batch=512):
-    model, _ = clip.load("ViT-B/32", device='cuda')
+    model = yaml_load('ultralytics/cfg/default.yaml')['text_model']
+    model = build_text_model(model, device='cuda')
     assert(not model.training)
     
-    text_tokens = clip.tokenize(texts).to('cuda')
+    text_tokens = model.tokenize(texts)
     txt_feats = []
     for text_token in tqdm(text_tokens.split(batch)):
-        txt_feats.append(model.encode_text(text_token).to(dtype=torch.float32))
+        txt_feats.append(model.encode_text(text_token))
     txt_feats = torch.cat(txt_feats, dim=0)
-    txt_feats = txt_feats / txt_feats.norm(p=2, dim=-1, keepdim=True)
     return txt_feats.cpu()
 
 
