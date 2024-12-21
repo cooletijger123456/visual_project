@@ -2278,10 +2278,11 @@ class RandomLoadText:
             num_padding = self.max_samples - valid_labels
             if num_padding > 0:
                 # texts += [self.padding_value] * num_padding
-                pair_scores = txt_feats @ self.global_grounding_neg_embeddings.T
-                pair_scores = pair_scores.amax(dim=0)
-                pad_net_cat_indexs = np.array(torch.where(pair_scores < 0.8)[0])
-                pad_net_cat_indexs = np.random.choice(pad_net_cat_indexs, size=num_padding, replace=False)
+                # pair_scores = txt_feats @ self.global_grounding_neg_embeddings.T
+                # pair_scores = pair_scores.amax(dim=0)
+                # pad_net_cat_indexs = np.array(torch.where(pair_scores < 0.8)[0])
+                global_neg_cat_len = self.global_grounding_neg_embeddings.shape[0]
+                pad_net_cat_indexs = np.random.choice(np.arange(0, global_neg_cat_len), size=num_padding, replace=False)
                 
                 pad_net_cat_embeddings = self.global_grounding_neg_embeddings[pad_net_cat_indexs]
                 
