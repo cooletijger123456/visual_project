@@ -22,3 +22,4 @@ pip install -e lvis-api
 
 # Generate train label embeddings
 # python tools/generate_label_embedding.py
+# python tools/generate_global_neg_cat.py
