@@ -17,7 +17,7 @@ def generate_label_embedding(texts, batch=512):
         txt_feats.append(model.encode_text(text_token).to(dtype=torch.float32))
     txt_feats = torch.cat(txt_feats, dim=0)
     txt_feats = txt_feats / txt_feats.norm(p=2, dim=-1, keepdim=True)
-    return txt_feats
+    return txt_feats.cpu()
 
 
 def collect_grounding_labels(cache_path):

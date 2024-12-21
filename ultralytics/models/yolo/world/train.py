@@ -46,9 +46,6 @@ class WorldTrainer(yolo.detect.DetectionTrainer):
             import clip
         self.clip = clip
         
-        device = f'cuda:{LOCAL_RANK}' if LOCAL_RANK != -1 else f'cuda:0'
-        self.train_label_embeddings = torch.load(self.args.train_label_embedding_path, map_location={'cuda:0':device})
-
     def get_model(self, cfg=None, weights=None, verbose=True):
         """Return WorldModel initialized with specified config and weights."""
         # NOTE: This `nc` here is the max number of different text samples in one image, rather than the actual `nc`.
@@ -82,14 +79,5 @@ class WorldTrainer(yolo.detect.DetectionTrainer):
     def preprocess_batch(self, batch):
         """Preprocesses a batch of images for YOLOWorld training, adjusting formatting and dimensions as needed."""
         batch = super().preprocess_batch(batch)
-
-        # NOTE: add text features
-        texts = list(itertools.chain(*batch["texts"]))
-        txt_feats = []
-        for text in texts:
-            txt_feats.append(self.train_label_embeddings[text])
-        txt_feats = torch.stack(txt_feats, dim=0)
-        txt_feats = txt_feats.reshape(len(batch["texts"]), -1, txt_feats.shape[-1])
-        
-        batch["txt_feats"] = txt_feats
+        batch["txt_feats"] = batch["texts"].to(self.device)
         return batch
