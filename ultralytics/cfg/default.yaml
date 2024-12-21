@@ -125,4 +125,4 @@ cfg: # (str, optional) for overriding defaults.yaml
 # Tracker settings ------------------------------------------------------------------------------------------------------
 tracker: botsort.yaml # (str) tracker type, choices=[botsort.yaml, bytetrack.yaml]
 
-train_label_embedding_path: tools/train_label_embeddings.pt
+val_interval: 5
