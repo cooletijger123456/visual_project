@@ -298,85 +298,20 @@ class GroundingDataset(YOLODataset):
             instance_count += label["bboxes"].shape[0]
         
         if "final_mixed_train_no_coco.json" in self.json_file:
-            assert(instance_count == 3681236)
+            assert(instance_count == 3681235)
         elif "final_flickr_separateGT_train.json" in self.json_file:
             assert(instance_count == 640704)
     
     def get_labels(self):
         """Loads annotations from a JSON file, filters, and normalizes bounding boxes for each image."""
-        import os
-        
         cache_path = Path(self.json_file).with_suffix('.cache')
-        if os.path.exists(cache_path):
-            labels = np.load(str(cache_path), allow_pickle=True)
-            self.verify_labels(labels)
-            self.im_files = [str(label["im_file"]) for label in labels]
-            if LOCAL_RANK in {-1, 0}:
-                LOGGER.info(f"Load {self.json_file} from cache file {cache_path}") 
-            return labels
-        
-        labels = []
-        LOGGER.info("Loading annotation file...")
-        with open(self.json_file) as f:
-            annotations = json.load(f)
-        images = {f'{x["id"]:d}': x for x in annotations["images"]}
-        
-        # Note: retain images without annotations
-        img_to_anns = {int(k): [] for k in images.keys()}
-        
-        for ann in annotations["annotations"]:
-            img_to_anns[ann["image_id"]].append(ann)
-            
-        for img_id, anns in TQDM(img_to_anns.items(), desc=f"Reading annotations {self.json_file}"):
-            img = images[f"{img_id:d}"]
-            h, w, f = img["height"], img["width"], img["file_name"]
-            im_file = Path(self.img_path) / f
-            if not im_file.exists():
-                continue
-            self.im_files.append(str(im_file))
-            bboxes = []
-            cat2id = {}
-            texts = []
-            for ann in anns:
-                if ann["iscrowd"]:
-                    continue
-                box = np.array(ann["bbox"], dtype=np.float64)
-                
-                box[2] += box[0]
-                box[3] += box[1]
-                
-                box = xyxy2xywhn(box, w=float(w), h=float(h), clip=True)
-                
-                if box[2] <= 0 or box[3] <= 0:
-                    continue
-
-                cat_name = " ".join([img["caption"][t[0] : t[1]] for t in ann["tokens_positive"]])
-                if cat_name not in cat2id:
-                    cat2id[cat_name] = len(cat2id)
-                    texts.append([cat_name])
-                cls = cat2id[cat_name]  # class
-                box = [cls] + box.tolist()
-                if box not in bboxes:
-                    bboxes.append(box)
-            lb = np.array(bboxes, dtype=np.float32) if len(bboxes) else np.zeros((0, 5), dtype=np.float32)
-            labels.append(
-                {
-                    "im_file": im_file,
-                    "shape": (h, w),
-                    "cls": lb[:, 0:1],  # n, 1
-                    "bboxes": lb[:, 1:],  # n, 4
-                    "normalized": True,
-                    "bbox_format": "xywh",
-                    "texts": texts,
-                }
-            )
+        labels = np.load(str(cache_path), allow_pickle=True)
         self.verify_labels(labels)
+        self.im_files = [str(label["im_file"]) for label in labels]
         if LOCAL_RANK in {-1, 0}:
-            np.save(str(cache_path), labels)
-            cache_path.with_suffix(".cache.npy").rename(cache_path)
-            LOGGER.info(f"Save {self.json_file} cache file {cache_path}") 
+            LOGGER.info(f"Load {self.json_file} from cache file {cache_path}") 
         return labels
-
+    
     def build_transforms(self, hyp=None):
         """Configures augmentations for training with optional text loading; `hyp` adjusts augmentation intensity."""
         transforms = super().build_transforms(hyp)

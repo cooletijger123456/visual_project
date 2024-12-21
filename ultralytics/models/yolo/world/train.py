@@ -5,8 +5,9 @@ import itertools
 from ultralytics.data import build_yolo_dataset
 from ultralytics.models import yolo
 from ultralytics.nn.tasks import WorldModel
-from ultralytics.utils import DEFAULT_CFG, RANK, checks
+from ultralytics.utils import DEFAULT_CFG, RANK, checks, LOCAL_RANK
 from ultralytics.utils.torch_utils import de_parallel
+import torch
 
 
 def on_pretrain_routine_end(trainer):
@@ -15,10 +16,6 @@ def on_pretrain_routine_end(trainer):
         # NOTE: for evaluation
         names = [name.split("/")[0] for name in list(trainer.test_loader.dataset.data["names"].values())]
         de_parallel(trainer.ema.ema).set_classes(names, cache_clip_model=False)
-    device = next(trainer.model.parameters()).device
-    trainer.text_model, _ = trainer.clip.load("ViT-B/32", device=device)
-    for p in trainer.text_model.parameters():
-        p.requires_grad_(False)
 
 
 class WorldTrainer(yolo.detect.DetectionTrainer):
@@ -48,6 +45,9 @@ class WorldTrainer(yolo.detect.DetectionTrainer):
             checks.check_requirements("git+https://github.com/ultralytics/CLIP.git")
             import clip
         self.clip = clip
+        
+        device = f'cuda:{LOCAL_RANK}' if LOCAL_RANK != -1 else f'cuda:0'
+        self.train_label_embeddings = torch.load(self.args.train_label_embedding_path, map_location={'cuda:0':device})
 
     def get_model(self, cfg=None, weights=None, verbose=True):
         """Return WorldModel initialized with specified config and weights."""
@@ -85,8 +85,11 @@ class WorldTrainer(yolo.detect.DetectionTrainer):
 
         # NOTE: add text features
         texts = list(itertools.chain(*batch["texts"]))
-        text_token = self.clip.tokenize(texts).to(batch["img"].device)
-        txt_feats = self.text_model.encode_text(text_token).to(dtype=batch["img"].dtype)  # torch.float32
-        txt_feats = txt_feats / txt_feats.norm(p=2, dim=-1, keepdim=True)
-        batch["txt_feats"] = txt_feats.reshape(len(batch["texts"]), -1, txt_feats.shape[-1])
+        txt_feats = []
+        for text in texts:
+            txt_feats.append(self.train_label_embeddings[text])
+        txt_feats = torch.stack(txt_feats, dim=0)
+        txt_feats = txt_feats.reshape(len(batch["texts"]), -1, txt_feats.shape[-1])
+        
+        batch["txt_feats"] = txt_feats
         return batch
