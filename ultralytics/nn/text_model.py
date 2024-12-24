@@ -38,16 +38,16 @@ class CLIP(TextModel):
 class MobileCLIP(TextModel):
     def __init__(self, device):
         super().__init__()
-        self.model = mobileclip.create_model_and_transforms('mobileclip_b', pretrained='mobileclip_blt.pt', device=device)[0]
-        self.tokenizer = mobileclip.get_tokenizer('mobileclip_b')
+        self.model = mobileclip.create_model_and_transforms('mobileclip_s0', pretrained='mobileclip_s0.pt', device=device)[0]
+        self.tokenizer = mobileclip.get_tokenizer('mobileclip_s0')
         self.to(device)
         self.device = device
         self.eval()
     
     def tokenize(self, texts):
         text_tokens = self.tokenizer(texts).to(self.device)
-        max_len = text_tokens.argmax(dim=-1).max().item() + 1
-        text_tokens = text_tokens[..., :max_len]
+        # max_len = text_tokens.argmax(dim=-1).max().item() + 1
+        # text_tokens = text_tokens[..., :max_len]
         return text_tokens
 
     @smart_inference_mode()
