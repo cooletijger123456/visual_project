@@ -7,8 +7,7 @@ import os
 from ultralytics.nn.text_model import build_text_model
 
 @smart_inference_mode()
-def generate_label_embedding(texts, batch=512):
-    model = yaml_load('ultralytics/cfg/default.yaml')['text_model']
+def generate_label_embedding(model, texts, batch=512):
     model = build_text_model(model, device='cuda')
     assert(not model.training)
     
@@ -58,13 +57,14 @@ if __name__ == '__main__':
     all_cat_names |= collect_grounding_labels(flickr_cache)
     all_cat_names |= collect_grounding_labels(mixed_grounding_cache)
     
-    all_cat_names |= set([""])
-    
     all_cat_names = list(all_cat_names)
-    all_cat_feats = generate_label_embedding(all_cat_names)
+    
+    model = yaml_load('ultralytics/cfg/default.yaml')['text_model']
+    all_cat_feats = generate_label_embedding(model, all_cat_names)
     
     cat_name_feat_map = {}
     for name, feat in zip(all_cat_names, all_cat_feats):
         cat_name_feat_map[name] = feat
     
-    torch.save(cat_name_feat_map, 'tools/train_label_embeddings.pt')
+    os.makedirs(f'tools/{model}', exist_ok=True)
+    torch.save(cat_name_feat_map, f'tools/{model}/train_label_embeddings.pt')

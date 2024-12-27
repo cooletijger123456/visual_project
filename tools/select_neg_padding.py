@@ -1,16 +1,17 @@
 import torch
 import json
 import numpy as np
-import random
+from ultralytics.utils import yaml_load
 
 if __name__ == '__main__':
     with open('tools/global_grounding_neg_cat.json', 'r') as f:
         global_grounding_neg_cats = np.array(json.load(f))
     
-    global_grounding_neg_embeddings = torch.load('tools/global_grounding_neg_embeddings.pt')
+    model = yaml_load('ultralytics/cfg/default.yaml')['text_model']
+    global_grounding_neg_embeddings = torch.load(f'tools/{model}/global_grounding_neg_embeddings.pt')
     
     cats = ["a dog", "a person"]
-    train_label_embeddings = torch.load('tools/train_label_embeddings.pt')
+    train_label_embeddings = torch.load(f'tools/{model}/train_label_embeddings.pt')
     txt_feats = []
     for cat in cats:
         txt_feats.append(train_label_embeddings[cat])

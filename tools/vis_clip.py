@@ -32,7 +32,3 @@ model = build_text_model('mobileclip')
 txt_feats = model.encode_text(model.tokenize(text))
 print(txt_feats)
 print(txt_feats.max(dim=-1))
-
-import torch
-
-print(torch.load('tools/train_label_embeddings.pt')["person"])

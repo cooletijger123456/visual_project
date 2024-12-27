@@ -19,9 +19,9 @@ class TextModel(nn.Module):
         pass
 
 class CLIP(TextModel):
-    def __init__(self, device):
+    def __init__(self, size, device):
         super().__init__()
-        self.model = clip.load("ViT-B/32", device=device)[0]
+        self.model = clip.load(size, device=device)[0]
         self.to(device)
         self.device = device
         self.eval()
@@ -36,10 +36,20 @@ class CLIP(TextModel):
         return txt_feats
         
 class MobileCLIP(TextModel):
-    def __init__(self, device):
+    
+    config_size_map = {
+        "s0": "s0",
+        "s1": "s1",
+        "s2": "s2",
+        "b": "b",
+        "blt": "b"
+    }
+    
+    def __init__(self, size, device):
         super().__init__()
-        self.model = mobileclip.create_model_and_transforms('mobileclip_s0', pretrained='mobileclip_s0.pt', device=device)[0]
-        self.tokenizer = mobileclip.get_tokenizer('mobileclip_s0')
+        config = self.config_size_map[size]
+        self.model = mobileclip.create_model_and_transforms(f'mobileclip_{config}', pretrained=f'mobileclip_{size}.pt', device=device)[0]
+        self.tokenizer = mobileclip.get_tokenizer(f'mobileclip_{config}')
         self.to(device)
         self.device = device
         self.eval()
@@ -58,10 +68,11 @@ class MobileCLIP(TextModel):
 
 def build_text_model(variant, device=None):
     LOGGER.info(f"Build text model {variant}")
-    if variant == 'clip':
-        return CLIP(device)
-    elif variant == 'mobileclip':
-        return MobileCLIP(device)
+    base, size = variant.split(":")
+    if base == 'clip':
+        return CLIP(size, device)
+    elif base == 'mobileclip':
+        return MobileCLIP(size, device)
     else:
         print("Variant not found")
         assert(False)
