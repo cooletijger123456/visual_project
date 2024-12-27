@@ -126,4 +126,4 @@ cfg: # (str, optional) for overriding defaults.yaml
 tracker: botsort.yaml # (str) tracker type, choices=[botsort.yaml, bytetrack.yaml]
 
 val_interval: 1
-text_model: mobileclip:blt
+text_model: clip:ViT-B/32
