@@ -415,7 +415,7 @@ class MaxSigmoidAttnBlock(nn.Module):
         """Initializes MaxSigmoidAttnBlock with specified arguments."""
         super().__init__()
         self.nh = nh
-        self.hc = c2 // nh
+        self.hc = ec // nh
         self.ec = Conv(c1, ec, k=1, act=False) if c1 != ec else None
         self.gl = nn.Linear(gc, ec)
         self.bias = nn.Parameter(torch.zeros(nh))

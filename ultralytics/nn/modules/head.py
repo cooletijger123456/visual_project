@@ -11,7 +11,7 @@ from torch.nn.init import constant_, xavier_uniform_
 from ultralytics.utils.tal import TORCH_1_10, dist2bbox, dist2rbox, make_anchors
 from ultralytics.utils.torch_utils import fuse_conv_and_bn
 
-from .block import DFL, BNContrastiveHead, ContrastiveHead, Proto
+from .block import DFL, BNContrastiveHead, ContrastiveHead, Proto, MaxSigmoidAttnBlock
 from .conv import Conv, DWConv
 from .transformer import MLP, DeformableTransformerDecoder, DeformableTransformerDecoderLayer
 from .utils import bias_init_with_prob, linear_init
@@ -391,6 +391,28 @@ class WorldDetect(Detect):
             c.bias.data[:] = math.log(5 / m.nc / (640 / s) ** 2)  
 
 
+class VLAttnBlock(nn.Module):
+    def __init__(self, x):
+        super().__init__()
+        self.attn = nn.ModuleList(MaxSigmoidAttnBlock(x // 2, x // 2, ec=x // 2, nh=x // 64) for _ in range(2))
+        self.cv2 = Conv(x, x, 1)
+
+    def forward(self, x, text):
+        x1, x2 = x.chunk(2, dim=1)
+        x1 = self.attn[0](x1, text)
+        x2 = self.attn[1](x2, text)
+        x = self.cv2(torch.cat((x1, x2), dim=1))
+        return x
+
+class VLAttnDetect(WorldDetect):
+    def __init__(self, nc=80, embed=512, with_bn=False, ch=()):
+        super().__init__(nc, embed, with_bn, ch)
+        self.attn = nn.ModuleList(VLAttnBlock(x) for x in ch)
+
+    def forward(self, x, text):
+        y = [self.attn[i](x[i], text) for i in range(self.nl)]
+        return super().forward(y, text)
+    
 class RTDETRDecoder(nn.Module):
     """
     Real-Time Deformable Transformer Decoder (RTDETRDecoder) module for object detection.
