@@ -9,6 +9,7 @@ import torch.nn as nn
 from torch.nn.init import constant_, xavier_uniform_
 
 from ultralytics.utils.tal import TORCH_1_10, dist2bbox, dist2rbox, make_anchors
+from ultralytics.utils.torch_utils import fuse_conv_and_bn
 
 from .block import DFL, BNContrastiveHead, ContrastiveHead, Proto
 from .conv import Conv, DWConv
@@ -306,9 +307,44 @@ class WorldDetect(Detect):
         """Initialize YOLO detection layer with nc classes and layer channels ch."""
         super().__init__(nc, ch)
         c3 = max(ch[0], min(self.nc, 100))
+        assert(c3 <= embed)
+        assert(with_bn == True)
         self.cv3 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, embed, 1)) for x in ch)
         self.cv4 = nn.ModuleList(BNContrastiveHead(embed) if with_bn else ContrastiveHead() for _ in ch)
-
+        
+    def fuse(self, txt_feats):
+        txt_feats = txt_feats.to(torch.float32).squeeze(0)
+        for cls_head, bn_head in zip(self.cv3, self.cv4):
+            assert(isinstance(cls_head, nn.Sequential))
+            assert(isinstance(bn_head, BNContrastiveHead))
+            conv = cls_head[-1]
+            assert(isinstance(conv, nn.Conv2d))
+            logit_scale = bn_head.logit_scale
+            bias = bn_head.bias
+            norm = bn_head.norm
+            
+            t = (txt_feats * logit_scale.exp())
+            conv: nn.Conv2d = fuse_conv_and_bn(conv, norm)
+            
+            w = conv.weight.data.squeeze(-1).squeeze(-1)
+            b = conv.bias.data
+            
+            w = t @ w
+            b1 = (t @ b.reshape(-1).unsqueeze(-1)).squeeze(-1)
+            b2 = torch.ones_like(b1) * bias
+            
+            conv = nn.Conv2d(
+                conv.in_channels,
+                w.shape[0],
+                kernel_size=1,
+            ).requires_grad_(False).to(conv.weight.device)
+            
+            conv.weight.data.copy_(w.unsqueeze(-1).unsqueeze(-1))
+            conv.bias.data.copy_(b1 + b2)
+            cls_head[-1] = conv
+            
+            bn_head.fuse()
+            
     def forward(self, x, text):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
         for i in range(self.nl):

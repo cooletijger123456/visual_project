@@ -712,8 +712,9 @@ class Exporter:
         ts = torch.jit.trace(model.eval(), self.im, strict=False)  # TorchScript model
         ct_model = ct.convert(
             ts,
-            inputs=[ct.ImageType("image", shape=self.im.shape, scale=scale, bias=bias)],
+            inputs=[ct.TensorType("image", shape=self.im.shape, dtype=np.float16)],
             classifier_config=classifier_config,
+            minimum_deployment_target=ct.target.iOS16,
             convert_to="neuralnetwork" if mlmodel else "mlprogram",
         )
         bits, mode = (8, "kmeans") if self.args.int8 else (16, "linear") if self.args.half else (32, None)

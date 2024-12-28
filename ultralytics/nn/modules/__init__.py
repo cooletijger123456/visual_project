@@ -56,6 +56,7 @@ from .block import (
     RepVGGDW,
     ResNetLayer,
     SCDown,
+    MaxSigmoidAttnBlock
 )
 from .conv import (
     CBAM,

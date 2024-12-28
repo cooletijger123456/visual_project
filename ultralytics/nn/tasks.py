@@ -61,6 +61,7 @@ from ultralytics.nn.modules import (
     Segment,
     WorldDetect,
     v10Detect,
+    MaxSigmoidAttnBlock,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -218,6 +219,12 @@ class BaseModel(nn.Module):
                 if isinstance(m, RepVGGDW):
                     m.fuse()
                     m.forward = m.forward_fuse
+                if isinstance(m, MaxSigmoidAttnBlock):
+                    assert(isinstance(self, WorldModel))
+                    m.fuse(self.txt_feats)
+                if isinstance(m, WorldDetect):
+                    assert(isinstance(self, WorldModel))
+                    m.fuse(self.txt_feats)
             self.info(verbose=verbose)
 
         return self
