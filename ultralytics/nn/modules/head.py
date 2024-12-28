@@ -394,13 +394,13 @@ class WorldDetect(Detect):
 class VLAttnBlock(nn.Module):
     def __init__(self, x):
         super().__init__()
-        self.attn = nn.ModuleList(MaxSigmoidAttnBlock(x // 2, x // 2, ec=x // 2, nh=x // 64) for _ in range(2))
+        self.attn = MaxSigmoidAttnBlock(x // 2, x // 2, ec=x // 2, nh=x // 64)
+        self.cv1 = Conv(x, x, 1)
         self.cv2 = Conv(x, x, 1)
 
     def forward(self, x, text):
-        x1, x2 = x.chunk(2, dim=1)
-        x1 = self.attn[0](x1, text)
-        x2 = self.attn[1](x2, text)
+        x1, x2 = self.cv1(x).chunk(2, dim=1)
+        x2 = self.attn(x2, text)
         x = self.cv2(torch.cat((x1, x2), dim=1))
         return x
 
