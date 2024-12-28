@@ -1,4 +1,4 @@
 scale: 0.9
-mixup: 0.15
+# mixup: 0.15
 # Mask refine
-copy_paste: 0.3
+# copy_paste: 0.3
