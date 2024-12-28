@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ultralytics.utils.torch_utils import fuse_conv_and_bn
+from ultralytics.utils.torch_utils import fuse_conv_and_bn, smart_inference_mode
 
 from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad
 from .transformer import TransformerBlock
@@ -423,7 +423,9 @@ class MaxSigmoidAttnBlock(nn.Module):
         self.scale = nn.Parameter(torch.ones(1, nh, 1, 1)) if scale else 1.0
         self.guide = None
 
+    @smart_inference_mode()
     def fuse(self, txt_feats):
+        assert(not self.training)
         guide = self.gl(txt_feats.to(self.gl.weight.dtype))
         guide = guide.view(1, -1, self.nh, self.hc)
         del self.guide
