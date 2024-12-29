@@ -319,7 +319,7 @@ class WorldDetect(Detect):
     def fuse(self, txt_feats):
         assert(not self.training)
         txt_feats = txt_feats.to(torch.float32).squeeze(0)
-        txt_feats = self.gc(txt_feats)
+        txt_feats = F.normalize(self.gc(txt_feats), dim=-1, p=2)
         del self.gc
         self.gc = nn.Identity()
         for cls_head, bn_head in zip(self.cv3, self.cv4):
@@ -355,8 +355,9 @@ class WorldDetect(Detect):
             
     def forward(self, x, text):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
+        text = self.gc(text)
         for i in range(self.nl):
-            x[i] = torch.cat((self.cv2[i](x[i]), self.cv4[i](self.cv3[i](x[i]), self.gc(text))), 1)
+            x[i] = torch.cat((self.cv2[i](x[i]), self.cv4[i](self.cv3[i](x[i]), text)), 1)
         if self.training:
             return x
 

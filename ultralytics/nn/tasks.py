@@ -220,12 +220,13 @@ class BaseModel(nn.Module):
                 if isinstance(m, RepVGGDW):
                     m.fuse()
                     m.forward = m.forward_fuse
+                device = next(self.model.parameters()).device
                 if isinstance(m, MaxSigmoidAttnBlock):
                     assert(isinstance(self, WorldModel))
-                    m.fuse(self.txt_feats)
+                    m.fuse(self.txt_feats.to(device))
                 if isinstance(m, WorldDetect):
                     assert(isinstance(self, WorldModel))
-                    m.fuse(self.txt_feats)
+                    m.fuse(self.txt_feats.to(device))
             self.info(verbose=verbose)
 
         return self
@@ -622,12 +623,13 @@ class WorldModel(DetectionModel):
         
         device = next(self.model.parameters()).device
         
+        text_model = self.args.get("text_model")
         if (
             not getattr(self, "clip_model", None) and cache_clip_model
         ):  # for backwards compatibility of models lacking clip_model attribute
-            self.clip_model = build_text_model(self.args.text_model, device=device)
+            self.clip_model = build_text_model(text_model, device=device)
             
-        model = self.clip_model if cache_clip_model else build_text_model(self.args.text_model, device=device)
+        model = self.clip_model if cache_clip_model else build_text_model(text_model, device=device)
         text_token = model.tokenize(text)
         txt_feats = model.encode_text(text_token)
         self.txt_feats = txt_feats.reshape(-1, len(text), txt_feats.shape[-1])
