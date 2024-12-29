@@ -7,11 +7,12 @@ import math
 import torch
 import torch.nn as nn
 from torch.nn.init import constant_, xavier_uniform_
+import torch.nn.functional as F
 
 from ultralytics.utils.tal import TORCH_1_10, dist2bbox, dist2rbox, make_anchors
-from ultralytics.utils.torch_utils import fuse_conv_and_bn
+from ultralytics.utils.torch_utils import fuse_conv_and_bn, smart_inference_mode
 
-from .block import DFL, BNContrastiveHead, ContrastiveHead, Proto, MaxSigmoidAttnBlock
+from .block import DFL, BNContrastiveHead, ContrastiveHead, Proto
 from .conv import Conv, DWConv
 from .transformer import MLP, DeformableTransformerDecoder, DeformableTransformerDecoderLayer
 from .utils import bias_init_with_prob, linear_init
@@ -312,8 +313,15 @@ class WorldDetect(Detect):
         self.cv3 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, embed, 1)) for x in ch)
         self.cv4 = nn.ModuleList(BNContrastiveHead(embed) if with_bn else ContrastiveHead() for _ in ch)
         
+        self.gc = nn.Identity()
+    
+    @smart_inference_mode()
     def fuse(self, txt_feats):
+        assert(not self.training)
         txt_feats = txt_feats.to(torch.float32).squeeze(0)
+        txt_feats = self.gc(txt_feats)
+        del self.gc
+        self.gc = nn.Identity()
         for cls_head, bn_head in zip(self.cv3, self.cv4):
             assert(isinstance(cls_head, nn.Sequential))
             assert(isinstance(bn_head, BNContrastiveHead))
@@ -348,7 +356,7 @@ class WorldDetect(Detect):
     def forward(self, x, text):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
         for i in range(self.nl):
-            x[i] = torch.cat((self.cv2[i](x[i]), self.cv4[i](self.cv3[i](x[i]), text)), 1)
+            x[i] = torch.cat((self.cv2[i](x[i]), self.cv4[i](self.cv3[i](x[i]), self.gc(text))), 1)
         if self.training:
             return x
 
@@ -390,28 +398,36 @@ class WorldDetect(Detect):
             b[-1].bias.data[:] = 0.0
             c.bias.data[:] = math.log(5 / m.nc / (640 / s) ** 2)  
 
-
-class VLAttnBlock(nn.Module):
-    def __init__(self, x):
+class SwiGLUFFN(nn.Module):
+    def __init__(
+        self,
+        gc,
+        ec,
+        e=4
+    ) -> None:
         super().__init__()
-        self.attn = MaxSigmoidAttnBlock(x // 2, x // 2, ec=x // 2, nh=x // 64)
-        self.cv1 = Conv(x, x, 1)
-        self.cv2 = Conv(x, x, 1)
+        self.w12 = nn.Linear(gc, e * ec)
+        self.w3 = nn.Linear(e * ec // 2, ec)
 
-    def forward(self, x, text):
-        x1, x2 = self.cv1(x).chunk(2, dim=1)
-        x2 = self.attn(x2, text)
-        x = self.cv2(torch.cat((x1, x2), dim=1))
-        return x
+    def forward(self, x):
+        x12 = self.w12(x)
+        x1, x2 = x12.chunk(2, dim=-1)
+        hidden = F.silu(x1) * x2
+        return self.w3(hidden)
+
+class Residual(nn.Module):
+    def __init__(self, m) -> None:
+        super().__init__()
+        self.m = m
+        self.residual_weight = nn.Parameter(torch.ones(1) * 1e-6)
+        
+    def forward(self, x):
+        return x + self.residual_weight * self.m(x)
 
 class VLAttnDetect(WorldDetect):
     def __init__(self, nc=80, embed=512, with_bn=False, ch=()):
         super().__init__(nc, embed, with_bn, ch)
-        self.attn = nn.ModuleList(VLAttnBlock(x) for x in ch)
-
-    def forward(self, x, text):
-        y = [self.attn[i](x[i], text) for i in range(self.nl)]
-        return super().forward(y, text)
+        self.gc = Residual(SwiGLUFFN(embed, embed))
     
 class RTDETRDecoder(nn.Module):
     """
