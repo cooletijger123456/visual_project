@@ -341,10 +341,10 @@ class WorldDetect(Detect):
             assert(isinstance(conv, nn.Conv2d))
             logit_scale = bn_head.logit_scale
             bias = bn_head.bias
-            norm = bn_head.norm
+            # norm = bn_head.norm
             
             t = (txt_feats * logit_scale.exp())
-            conv: nn.Conv2d = fuse_conv_and_bn(conv, norm)
+            # conv: nn.Conv2d = fuse_conv_and_bn(conv, norm)
             
             w = conv.weight.data.squeeze(-1).squeeze(-1)
             b = conv.bias.data

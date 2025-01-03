@@ -559,14 +559,14 @@ class BNContrastiveHead(nn.Module):
     def __init__(self, embed_dims: int):
         """Initialize ContrastiveHead with region-text similarity parameters."""
         super().__init__()
-        self.norm = nn.BatchNorm2d(embed_dims)
+        # self.norm = nn.BatchNorm2d(embed_dims)
         # NOTE: use -10.0 to keep the init cls loss consistency with other losses
         self.bias = nn.Parameter(torch.tensor([-10.0]))
         # use -1.0 is more stable
         self.logit_scale = nn.Parameter(-1.0 * torch.ones([]))
 
     def fuse(self):
-        del self.norm
+        # del self.norm
         del self.bias
         del self.logit_scale
         self.forward = self.forward_fuse
@@ -576,7 +576,7 @@ class BNContrastiveHead(nn.Module):
     
     def forward(self, x, w):
         """Forward function of contrastive learning."""
-        x = self.norm(x)
+        # x = self.norm(x)
         w = F.normalize(w, dim=-1, p=2)
         x = torch.einsum("bchw,bkc->bkhw", x, w)
         return x * self.logit_scale.exp() + self.bias
