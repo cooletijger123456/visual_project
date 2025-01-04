@@ -437,7 +437,7 @@ class Residual(nn.Module):
     def forward(self, x):
         return x + self.residual_weight * self.m(x)
 
-class VLAttnDetect(WorldDetect):
+class VLDetect(WorldDetect):
     def __init__(self, nc=80, embed=512, with_bn=False, ch=()):
         super().__init__(nc, embed, with_bn, ch)
         self.gc = Residual(SwiGLUFFN(embed, embed))
