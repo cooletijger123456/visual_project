@@ -23,7 +23,7 @@ data = dict(
     val=dict(yolo_data=["lvis.yaml"]),
 )
 
-model_path = "yolov8s-worldv2.yaml"
+model_path = "yolov8l-worldv2-vl.yaml"
 
 scale = guess_model_scale(model_path)
 cfg_dir = "ultralytics/cfg"
@@ -36,7 +36,7 @@ LOGGER.info(f"Extends: {extends}")
 
 model = YOLOWorld(model_path)
 
-model.train(data=data, batch=128, epochs=100, **extends, close_mosaic=2, \
+model.train(data=data, batch=128, epochs=30, **extends, close_mosaic=2, \
     optimizer='AdamW', lr0=2e-3, warmup_bias_lr=0.0, \
         weight_decay=0.025, momentum=0.9, \
         trainer=WorldTrainerFromScratch, device='0,1,2,3,4,5,6,7')
