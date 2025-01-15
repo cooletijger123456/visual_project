@@ -416,12 +416,15 @@ class SwiGLUFFN(nn.Module):
     def __init__(
         self,
         gc,
-        ec,
-        e=4
+        e=4,
+        multiple_of=128
     ) -> None:
         super().__init__()
-        self.w12 = nn.Linear(gc, e * ec)
-        self.w3 = nn.Linear(e * ec // 2, ec)
+        hd = e * gc * 2 // 3
+        mid = multiple_of * ((hd + multiple_of - 1) // multiple_of)
+        
+        self.w12 = nn.Linear(gc, 2 * mid)
+        self.w3 = nn.Linear(mid, gc)
 
     def forward(self, x):
         x12 = self.w12(x)
@@ -429,19 +432,21 @@ class SwiGLUFFN(nn.Module):
         hidden = F.silu(x1) * x2
         return self.w3(hidden)
 
-class Residual(nn.Module):
-    def __init__(self, m) -> None:
+class LAdapter(nn.Module):
+    def __init__(self, embed) -> None:
         super().__init__()
-        self.m = m
-        self.residual_weight = nn.Parameter(torch.ones(1) * 1e-6)
+        self.m = SwiGLUFFN(embed)
+        nn.init.zeros_(self.m.w3.weight)
+        nn.init.zeros_(self.m.w3.bias)
+        self.alpha = 1
         
     def forward(self, x):
-        return x + self.residual_weight * self.m(x)
+        return x + self.alpha * self.m(x)
 
 class VLDetect(WorldDetect):
     def __init__(self, nc=80, embed=512, with_bn=False, ch=()):
         super().__init__(nc, embed, with_bn, ch)
-        self.gc = Residual(SwiGLUFFN(embed, embed))
+        self.gc = LAdapter(embed)
     
 class RTDETRDecoder(nn.Module):
     """
