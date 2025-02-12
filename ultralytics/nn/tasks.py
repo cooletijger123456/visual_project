@@ -617,6 +617,8 @@ class WorldModel(DetectionModel):
 
     def __init__(self, cfg="yolov8s-world.yaml", ch=3, nc=None, verbose=True):
         """Initialize YOLOv8 world model with given config and parameters."""
+        # Randomness
+        # self.txt_feats = torch.randn(1, nc or 80, 512)  # features placeholder
         self.clip_model = None  # CLIP model placeholder
         super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
     
