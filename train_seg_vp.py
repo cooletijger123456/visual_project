@@ -36,6 +36,8 @@ assert(all(k in defaults for k in extends))
 LOGGER.info(f"Extends: {extends}")
 
 model = YOLOWorld("yolov8l-worldv2-vlhead-mobileclip-ladapterglu-imgsz800-alpha1-segm.pt")
+# model = YOLOWorld("yolov8l-worldv2-vlhead-mobileclip-ladapterglu-imgsz800-alpha1-segm-det1.pt")
+# WorldSegVPTrainer => WorldVPTrainer
 
 freeze = list(range(0, 22))
 for name, child in model.model.model[-1].named_children():
