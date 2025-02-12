@@ -24,7 +24,7 @@ data = dict(
     val=dict(yolo_data=["lvis.yaml"]),
 )
 
-model_path = "yolov8l-worldv2-vl.yaml"
+model_path = "yolov8l-worldv2-vl-seg.yaml"
 
 scale = guess_model_scale(model_path)
 cfg_dir = "ultralytics/cfg"

@@ -736,7 +736,7 @@ class WorldModel(DetectionModel):
             return super().init_criterion()
 
 
-class WorldSegModel(WorldModel):
+class WorldSegModel(WorldModel, SegmentationModel):
     """YOLOv8-World segmentation model."""
 
     def __init__(self, cfg="yolov8n-worldv2-seg.yaml", ch=3, nc=None, verbose=True):
@@ -1114,7 +1114,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args.append([ch[x] for x in f])
             if m is Segment or m is WorldSegment or m is VLSegment:
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
-            if m in {Detect, VLDetect, Segment, Pose, OBB}:
+            if m in {Detect, VLDetect, Segment, VLSegment, Pose, OBB}:
                 m.legacy = legacy
         elif m is RTDETRDecoder:  # special case, channels arg must be passed in index 1
             args.insert(1, [ch[x] for x in f])
