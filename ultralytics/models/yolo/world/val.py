@@ -91,6 +91,7 @@ class WorldValidatorMixin:
                 stats = tp_stats
             else:
                 LOGGER.info("Validate using the visual prompt.")
+                self.args.half = False
                 vpe = self.get_visual_pe(model)
                 model.set_classes(names, vpe)
                 vp_stats = super().__call__(trainer, model)
@@ -115,6 +116,7 @@ class WorldValidatorMixin:
                     stats = tp_stats
                 else:
                     LOGGER.info("Validate using the visual prompt.")
+                    self.args.half = False
                     vpe = self.get_visual_pe(model)
                     model.set_classes(names, vpe)
                     vp_stats = super().__call__(trainer, deepcopy(model))
