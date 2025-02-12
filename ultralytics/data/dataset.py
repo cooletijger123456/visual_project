@@ -312,10 +312,14 @@ class GroundingDataset(YOLODataset):
         for label in labels:
             instance_count += label["bboxes"].shape[0]
         
-        if "final_mixed_train_no_coco" in self.json_file:
+        if "final_mixed_train_no_coco_segm" in self.json_file:
             assert(instance_count == 3662344)
-        elif "final_flickr_separateGT_train" in self.json_file:
+        elif "final_mixed_train_no_coco" in self.json_file:
+            assert(instance_count == 3681235)
+        elif "final_flickr_separateGT_train_segm" in self.json_file:
             assert(instance_count == 638214)
+        elif "final_flickr_separateGT_train" in self.json_file:
+            assert(instance_count == 640704)
         else:
             assert(False)
     
