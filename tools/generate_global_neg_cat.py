@@ -21,10 +21,10 @@ if __name__ == '__main__':
     os.environ["PYTHONHASHSEED"] = "0"
     cat_name_freq = defaultdict(int)
     
-    flickr_cache_path = Path('../datasets/flickr/annotations/final_flickr_separateGT_train.cache')
+    flickr_cache_path = Path('../datasets/flickr/annotations/final_flickr_separateGT_train_segm.cache')
     obtain_cat_freq(flickr_cache_path, cat_name_freq)
 
-    mixed_grounding_cache_path = Path('../datasets/mixed_grounding/annotations/final_mixed_train_no_coco.cache')
+    mixed_grounding_cache_path = Path('../datasets/mixed_grounding/annotations/final_mixed_train_no_coco_segm.cache')
     obtain_cat_freq(mixed_grounding_cache_path, cat_name_freq)
 
     global_neg_cat = []

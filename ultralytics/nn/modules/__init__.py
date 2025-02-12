@@ -73,7 +73,7 @@ from .conv import (
     RepConv,
     SpatialAttention,
 )
-from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment, WorldDetect, VLDetect, v10Detect
+from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment, WorldDetect, WorldSegment, VLDetect, VLSegment, v10Detect
 from .transformer import (
     AIFI,
     MLP,
@@ -142,6 +142,8 @@ __all__ = (
     "OBB",
     "WorldDetect",
     "VLDetect",
+    "WorldSegment",
+    "VLSegment",
     "v10Detect",
     "ImagePoolingAttn",
     "ContrastiveHead",

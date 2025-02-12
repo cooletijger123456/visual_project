@@ -61,6 +61,8 @@ from ultralytics.nn.modules import (
     Segment,
     WorldDetect,
     VLDetect,
+    WorldSegment,
+    VLSegment,
     v10Detect,
     MaxSigmoidAttnBlock,
 )
@@ -73,6 +75,8 @@ from ultralytics.utils.loss import (
     v8OBBLoss,
     v8PoseLoss,
     v8SegmentationLoss,
+    TVPDetectLoss,
+    TVPSegmentLoss
 )
 from ultralytics.utils.ops import make_divisible
 from ultralytics.utils.plotting import feature_visualization
@@ -86,6 +90,7 @@ from ultralytics.utils.torch_utils import (
     time_sync,
     smart_inference_mode
 )
+from ultralytics.nn.autobackend import check_class_names
 
 try:
     import thop
@@ -223,10 +228,10 @@ class BaseModel(nn.Module):
                 device = next(self.model.parameters()).device
                 if isinstance(m, MaxSigmoidAttnBlock):
                     assert(isinstance(self, WorldModel))
-                    m.fuse(self.txt_feats.to(device))
+                    m.fuse(self.pe.to(device))
                 if isinstance(m, WorldDetect):
                     assert(isinstance(self, WorldModel))
-                    m.fuse(self.txt_feats.to(device))
+                    m.fuse(self.pe.to(device))
             self.info(verbose=verbose)
 
         return self
@@ -267,7 +272,7 @@ class BaseModel(nn.Module):
         """
         self = super()._apply(fn)
         m = self.model[-1]  # Detect()
-        if isinstance(m, Detect):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect
+        if isinstance(m, Detect):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect, WorldSegment
             m.stride = fn(m.stride)
             m.anchors = fn(m.anchors)
             m.strides = fn(m.strides)
@@ -333,7 +338,7 @@ class DetectionModel(BaseModel):
 
         # Build strides
         m = self.model[-1]  # Detect()
-        if isinstance(m, Detect):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect
+        if isinstance(m, Detect):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect, WorldSegment
             s = 256  # 2x min stride
             m.inplace = self.inplace
 
@@ -341,7 +346,7 @@ class DetectionModel(BaseModel):
                 """Performs a forward pass through the model, handling different Detect subclass types accordingly."""
                 if self.end2end:
                     return self.forward(x)["one2many"]
-                return self.forward(x)[0] if isinstance(m, (Segment, Pose, OBB)) else self.forward(x)
+                return self.forward(x)[0] if isinstance(m, (Segment, WorldSegment, Pose, OBB)) else self.forward(x)
 
             m.stride = torch.tensor([s / x.shape[-2] for x in _forward(torch.zeros(1, ch, s, s))])  # forward
             self.stride = m.stride
@@ -612,12 +617,13 @@ class WorldModel(DetectionModel):
 
     def __init__(self, cfg="yolov8s-world.yaml", ch=3, nc=None, verbose=True):
         """Initialize YOLOv8 world model with given config and parameters."""
-        self.txt_feats = torch.randn(1, nc or 80, 512)  # features placeholder
         self.clip_model = None  # CLIP model placeholder
         super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
-
+    
     @smart_inference_mode()
-    def set_classes(self, text, batch=80, cache_clip_model=True):
+    def get_text_pe(self, text, batch=80, cache_clip_model=False):
+        assert(not self.training)
+        
         """Set classes in advance so that model could do offline-inference without clip model."""
         from ultralytics.nn.text_model import build_text_model
         
@@ -632,10 +638,37 @@ class WorldModel(DetectionModel):
         model = self.clip_model if cache_clip_model else build_text_model(text_model, device=device)
         text_token = model.tokenize(text)
         txt_feats = model.encode_text(text_token)
-        self.txt_feats = txt_feats.reshape(-1, len(text), txt_feats.shape[-1])
-        self.model[-1].nc = len(text)
+        txt_feats = txt_feats.reshape(-1, len(text), txt_feats.shape[-1])
+        
+        head = self.model[-1]
+        assert(isinstance(head, WorldDetect))
+        return head.get_tpe(txt_feats)
+    
+    @smart_inference_mode()
+    def get_visual_pe(self, img, visual):
+        return self(img, vpe=visual, return_vpe=True)
+        
+    def set_classes(self, names, embeddings):
+        """Set classes in advance so that model could do offline-inference without clip model."""
+        assert(embeddings.ndim == 3)
+        self.pe = embeddings
+        self.model[-1].nc = len(names)
+        self.names = check_class_names(names)
 
-    def predict(self, x, profile=False, visualize=False, txt_feats=None, augment=False, embed=None):
+    def get_cls_pe(self, tpe, vpe):
+        all_pe = []
+        if tpe is not None:
+            assert(tpe.ndim == 3)
+            all_pe.append(tpe)
+        if vpe is not None:
+            assert(vpe.ndim == 3)
+            all_pe.append(vpe)
+        if len(all_pe) == 0:
+            all_pe.append(getattr(self, 'pe', torch.zeros(1, 80, 512)))
+        return torch.cat(all_pe, dim=1)
+
+    def predict(self, x, profile=False, visualize=False, tpe=None, \
+        augment=False, embed=None, vpe=None, return_vpe=False):
         """
         Perform a forward pass through the model.
 
@@ -649,23 +682,26 @@ class WorldModel(DetectionModel):
 
         Returns:
             (torch.Tensor): Model's output tensor.
-        """
-        txt_feats = (self.txt_feats if txt_feats is None else txt_feats).to(device=x.device, dtype=x.dtype)
-        if len(txt_feats) != len(x):
-            txt_feats = txt_feats.repeat(len(x), 1, 1)
-        ori_txt_feats = txt_feats.clone()
+        """            
         y, dt, embeddings = [], [], []  # outputs
+        b = x.shape[0]
         for m in self.model:  # except the head part
             if m.f != -1:  # if not from previous layer
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
             if profile:
                 self._profile_one_layer(m, x, dt)
             if isinstance(m, C2fAttn):
-                x = m(x, txt_feats)
+                x = m(x, tpe or getattr(self, 'pe', torch.zeros(1, 80, 512)).to(x.device))
             elif isinstance(m, WorldDetect):
-                x = m(x, ori_txt_feats)
-            elif isinstance(m, ImagePoolingAttn):
-                txt_feats = m(x, txt_feats)
+                vpe = m.get_vpe(x, vpe) if vpe is not None else None
+                if return_vpe:
+                    assert(vpe is not None)
+                    assert(not self.training)
+                    return vpe
+                cls_pe = self.get_cls_pe(m.get_tpe(tpe), vpe).to(device=x[0].device, dtype=x[0].dtype)
+                if len(cls_pe) != b:
+                    cls_pe = cls_pe.repeat(b, 1, 1)
+                x = m(x, cls_pe)
             else:
                 x = m(x)  # run
 
@@ -690,8 +726,29 @@ class WorldModel(DetectionModel):
             self.criterion = self.init_criterion()
 
         if preds is None:
-            preds = self.forward(batch["img"], txt_feats=batch["txt_feats"])
+            preds = self.forward(batch["img"], tpe=batch["txt_feats"], vpe=batch["visuals"] if self.args.load_vp else None)
         return self.criterion(preds, batch)
+    
+    def init_criterion(self):
+        if self.args.load_vp:
+            return TVPDetectLoss(self)
+        else:
+            return super().init_criterion()
+
+
+class WorldSegModel(WorldModel):
+    """YOLOv8-World segmentation model."""
+
+    def __init__(self, cfg="yolov8n-worldv2-seg.yaml", ch=3, nc=None, verbose=True):
+        """Initialize YOLOv8-World segmentation model with given config and parameters."""
+        super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
+
+    def init_criterion(self):
+        """Initialize the loss criterion for the SegmentationModel."""
+        if self.args.load_vp:
+            return TVPSegmentLoss(self)
+        else:
+            return super().init_criterion()
 
 
 class Ensemble(nn.ModuleList):
@@ -1053,9 +1110,9 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
-        elif m in {Detect, WorldDetect, VLDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
+        elif m in {Detect, WorldDetect, VLDetect, Segment, WorldSegment, VLSegment, Pose, OBB, ImagePoolingAttn, v10Detect}:
             args.append([ch[x] for x in f])
-            if m is Segment:
+            if m is Segment or m is WorldSegment or m is VLSegment:
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
             if m in {Detect, VLDetect, Segment, Pose, OBB}:
                 m.legacy = legacy
@@ -1139,7 +1196,7 @@ def guess_model_task(model):
             return "classify"
         if "detect" in m:
             return "detect"
-        if m == "segment":
+        if "segment" in m:
             return "segment"
         if m == "pose":
             return "pose"
@@ -1159,7 +1216,7 @@ def guess_model_task(model):
             with contextlib.suppress(Exception):
                 return cfg2task(eval(x))
         for m in model.modules():
-            if isinstance(m, Segment):
+            if isinstance(m, (Segment, WorldSegment)):
                 return "segment"
             elif isinstance(m, Classify):
                 return "classify"

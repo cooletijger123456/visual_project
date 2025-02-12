@@ -17,6 +17,6 @@ for file in tqdm(os.listdir(dir)):
         assert(all([l <= 1 for l in line]))
         assert(all([l >= 0 for l in line]))
 
-assert(count == 8542171)
+assert(count == 8529995)
         
     

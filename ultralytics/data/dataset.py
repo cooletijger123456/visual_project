@@ -25,6 +25,7 @@ from .augment import (
     classify_augmentations,
     classify_transforms,
     v8_transforms,
+    LoadVisualPrompt
 )
 from .base import BaseDataset
 from .utils import (
@@ -54,12 +55,13 @@ class YOLODataset(BaseDataset):
         (torch.utils.data.Dataset): A PyTorch dataset object that can be used for training an object detection model.
     """
 
-    def __init__(self, *args, data=None, task="detect", **kwargs):
+    def __init__(self, *args, data=None, task="detect", load_vp=False, **kwargs):
         """Initializes the YOLODataset with optional configurations for segments and keypoints."""
         self.use_segments = task == "segment"
         self.use_keypoints = task == "pose"
         self.use_obb = task == "obb"
         self.data = data
+        self.load_vp = load_vp
         assert not (self.use_segments and self.use_keypoints), "Can not use both segments and keypoints."
         super().__init__(*args, **kwargs)
 
@@ -147,7 +149,8 @@ class YOLODataset(BaseDataset):
             d = f"Scanning {cache_path}... {nf} images, {nm + ne} backgrounds, {nc} corrupt"
             TQDM(None, desc=self.prefix + d, total=n, initial=n)  # display results
             if cache["msgs"]:
-                LOGGER.info("\n".join(cache["msgs"]))  # display warnings
+                # LOGGER.info("\n".join(cache["msgs"]))  # display warnings
+                LOGGER.info(f'#WARNING Messages: {len(cache["msgs"])}')
 
         # Read cache
         [cache.pop(k) for k in ("hash", "version", "msgs")]  # remove items
@@ -192,6 +195,13 @@ class YOLODataset(BaseDataset):
                 bgr=hyp.bgr if self.augment else 0.0,  # only affect training.
             )
         )
+        if self.load_vp:
+            if not self.augment:
+                assert(self.batch_size == 1)
+                nc = len(self.data["names"])
+            else:
+                nc = 80
+            transforms.append(LoadVisualPrompt(nc=nc, augment=self.augment))
         return transforms
 
     def close_mosaic(self, hyp):
@@ -238,6 +248,8 @@ class YOLODataset(BaseDataset):
                 value = torch.stack(value, 0)
             if k == "texts":
                 value = torch.stack(value, 0)
+            if k == "visuals":
+                value = torch.nn.utils.rnn.pad_sequence(value, batch_first=True)
             if k in {"masks", "keypoints", "bboxes", "cls", "segments", "obb"}:
                 value = torch.cat(value, 0)
             new_batch[k] = value
@@ -276,7 +288,8 @@ class YOLOMultiModalDataset(YOLODataset):
         transforms = super().build_transforms(hyp)
         if self.augment:
             # NOTE: hard-coded the args for now.
-            transforms.insert(-1, RandomLoadText(text_model=hyp.text_model, max_samples=min(self.data["nc"], 80), padding=True))
+            index = -2 if self.load_vp else -1
+            transforms.insert(index, RandomLoadText(text_model=hyp.text_model, max_samples=min(self.data["nc"], 80), padding=True))
         return transforms
 
 from ultralytics.utils.ops import xyxy2xywhn
@@ -286,7 +299,7 @@ class GroundingDataset(YOLODataset):
 
     def __init__(self, *args, task="detect", json_file, **kwargs):
         """Initializes a GroundingDataset for object detection, loading annotations from a specified JSON file."""
-        assert task == "detect", "`GroundingDataset` only support `detect` task for now!"
+        assert task == "detect" or task == "segment", "`GroundingDataset` only support `detect` task for now!"
         self.json_file = json_file
         super().__init__(*args, task=task, data={}, **kwargs)
 
@@ -299,10 +312,12 @@ class GroundingDataset(YOLODataset):
         for label in labels:
             instance_count += label["bboxes"].shape[0]
         
-        if "final_mixed_train_no_coco.json" in self.json_file:
-            assert(instance_count == 3681235)
-        elif "final_flickr_separateGT_train.json" in self.json_file:
-            assert(instance_count == 640704)
+        if "final_mixed_train_no_coco" in self.json_file:
+            assert(instance_count == 3662344)
+        elif "final_flickr_separateGT_train" in self.json_file:
+            assert(instance_count == 638214)
+        else:
+            assert(False)
     
     def get_labels(self):
         """Loads annotations from a JSON file, filters, and normalizes bounding boxes for each image."""
@@ -319,7 +334,8 @@ class GroundingDataset(YOLODataset):
         transforms = super().build_transforms(hyp)
         if self.augment:
             # NOTE: hard-coded the args for now.
-            transforms.insert(-1, RandomLoadText(text_model=hyp.text_model, max_samples=80, padding=True))
+            index = -2 if self.load_vp else -1
+            transforms.insert(index, RandomLoadText(text_model=hyp.text_model, max_samples=80, padding=True))
         return transforms
 
 

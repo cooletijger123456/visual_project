@@ -48,8 +48,8 @@ def collect_detection_labels(yaml_path):
 if __name__ == '__main__':
     os.environ["PYTHONHASHSEED"] = "0"
     
-    flickr_cache = '../datasets/flickr/annotations/final_flickr_separateGT_train.cache'
-    mixed_grounding_cache = '../datasets/mixed_grounding/annotations/final_mixed_train_no_coco.cache'
+    flickr_cache = '../datasets/flickr/annotations/final_flickr_separateGT_train_segm.cache'
+    mixed_grounding_cache = '../datasets/mixed_grounding/annotations/final_mixed_train_no_coco_segm.cache'
     objects365v1_yaml = 'ultralytics/cfg/datasets/Objects365v1.yaml'
     
     all_cat_names = set()

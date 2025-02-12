@@ -9,13 +9,14 @@ import cv2
 import numpy as np
 import torch
 from PIL import Image
+from torch.nn import functional as F
 
 from ultralytics.data.utils import polygons2masks, polygons2masks_overlap
 from ultralytics.utils import LOGGER, colorstr
 from ultralytics.utils.checks import check_version
 from ultralytics.utils.instance import Instances
 from ultralytics.utils.metrics import bbox_ioa
-from ultralytics.utils.ops import segment2box, xyxyxyxy2xywhr
+from ultralytics.utils.ops import segment2box, xyxyxyxy2xywhr, xywh2xyxy
 from ultralytics.utils.torch_utils import TORCHVISION_0_10, TORCHVISION_0_11, TORCHVISION_0_13
 
 DEFAULT_MEAN = (0.0, 0.0, 0.0)
@@ -2132,6 +2133,41 @@ class Format:
         return masks, instances, cls
 
 
+
+class LoadVisualPrompt:
+    def __init__(self, nc, augment):
+        self.nc = nc
+        self.min_interval = 5
+        self.augment = augment
+        self.scale_factor = 1/8
+    
+    def make_mask(self, boxes, h, w):
+        x1, y1, x2, y2 = torch.chunk(boxes[:, :, None], 4, 1)  # x1 shape(n,1,1)
+        r = torch.arange(w)[None, None, :]  # rows shape(1,1,w)
+        c = torch.arange(h)[None, :, None]  # cols shape(1,h,1)
+
+        return ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))
+    
+    def __call__(self, labels):
+        imgsz = labels["img"].shape[1:]
+        masksz = (int(imgsz[0] * self.scale_factor), int(imgsz[1] * self.scale_factor))
+        bboxes = labels["bboxes"]
+        bboxes = xywh2xyxy(bboxes) * torch.tensor(masksz)[[1, 0, 1, 0]]  # target boxes
+        masks = self.make_mask(bboxes, *masksz).float()
+        
+        cls = labels["cls"].squeeze(-1).to(torch.int)
+        cls_unique, inverse_indices = torch.unique(cls, sorted=True, return_inverse=True)
+        if len(cls_unique) != 0 and self.augment:
+            assert(len(cls_unique) == cls_unique[-1] + 1)
+        elif not self.augment:
+            assert(len(cls_unique) == 1)
+        visuals = torch.zeros(len(cls_unique), *masksz)
+        for idx, mask in zip(inverse_indices, masks):
+            visuals[idx] = torch.logical_or(visuals[idx], mask)
+        # visuals[0] = masks[random.choice(range(len(masks)))]
+        labels["visuals"] = visuals
+        return labels
+
 class RandomLoadText:
     """
     Randomly samples positive and negative texts and updates class indices accordingly.
@@ -2248,7 +2284,7 @@ class RandomLoadText:
         neg_labels = random.sample(neg_labels, k=neg_samples)
 
         sampled_labels = pos_labels + neg_labels
-        random.shuffle(sampled_labels)
+        # random.shuffle(sampled_labels)
 
         label2ids = {label: i for i, label in enumerate(sampled_labels)}
         valid_idx = np.zeros(len(labels["instances"]), dtype=bool)
@@ -2272,7 +2308,10 @@ class RandomLoadText:
         txt_feats = []
         for text in texts:
             txt_feats.append(self.train_label_embeddings[text])
-        txt_feats = torch.stack(txt_feats, dim=0)
+        if len(txt_feats) != 0:
+            txt_feats = torch.stack(txt_feats, dim=0)
+        else:
+            txt_feats = None
         
         if self.padding:
             valid_labels = len(pos_labels) + len(neg_labels)
@@ -2287,7 +2326,10 @@ class RandomLoadText:
                 
                 pad_net_cat_embeddings = self.global_grounding_neg_embeddings[pad_net_cat_indexs]
                 
-                txt_feats = torch.cat((txt_feats, pad_net_cat_embeddings), dim=0)
+                if txt_feats is not None:
+                    txt_feats = torch.cat((txt_feats, pad_net_cat_embeddings), dim=0)
+                else:
+                    txt_feats = pad_net_cat_embeddings
 
         assert(txt_feats.shape[0] == self.max_samples)
         labels["texts"] = txt_feats

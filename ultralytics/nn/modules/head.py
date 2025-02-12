@@ -16,8 +16,9 @@ from .block import DFL, BNContrastiveHead, ContrastiveHead, Proto
 from .conv import Conv, DWConv
 from .transformer import MLP, DeformableTransformerDecoder, DeformableTransformerDecoderLayer
 from .utils import bias_init_with_prob, linear_init
+from torch.nn import functional as F
 
-__all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder", "v10Detect"
+__all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder", "v10Detect", "WorldDetect", "WorldSegment"
 
 
 class Detect(nn.Module):
@@ -300,6 +301,24 @@ class Classify(nn.Module):
         x = self.linear(self.drop(self.pool(self.conv(x)).flatten(1)))
         return x
 
+class VisualPromptEncoder(nn.Module):
+    def __init__(self, ch, c3, embed):
+        super().__init__()
+        self.cv = nn.ModuleList(nn.Sequential(Conv(x, c3, 3)) for x in ch)
+        self.cv[0].append(nn.Sequential(Conv(c3, c3, 3), nn.Conv2d(c3, embed, 1)))
+        self.cv[1].append(nn.Sequential(Conv(c3, c3, 3), nn.Conv2d(c3, embed, 1), nn.Upsample(scale_factor=2, mode='nearest')))
+        self.cv[2].append(nn.Sequential(Conv(c3, c3, 3), nn.Conv2d(c3, embed, 1), nn.Upsample(scale_factor=4, mode='nearest')))
+
+    def forward(self, x, vp, epsilon=1e-8):
+        y = [self.cv[i](xi) for i, xi in enumerate(x)]
+        y = torch.stack(y, dim=1).mean(dim=1)
+        vp = vp / (vp.sum(dim=(-1, -2), keepdim=True) + epsilon)
+        vpe = torch.einsum("bchw,bqhw->bqc", y, vp)
+        vpe = F.normalize(vpe, dim=-1, p=2)
+        output = torch.zeros_like(vpe)
+        valid_index = vp.sum(dim=(-1,-2)) > 0
+        output[valid_index] = vpe[valid_index]
+        return output
 
 class WorldDetect(Detect):
     """Head for integrating YOLO detection models with semantic understanding from text embeddings."""
@@ -327,14 +346,13 @@ class WorldDetect(Detect):
         self.cv4 = nn.ModuleList(BNContrastiveHead(embed) if with_bn else ContrastiveHead() for _ in ch)
         
         self.gc = nn.Identity()
+        self.vpe = VisualPromptEncoder(ch, c3, embed)
+        self.embed = embed
     
     @smart_inference_mode()
     def fuse(self, txt_feats):
         assert(not self.training)
         txt_feats = txt_feats.to(torch.float32).squeeze(0)
-        txt_feats = F.normalize(self.gc(txt_feats), dim=-1, p=2)
-        del self.gc
-        self.gc = nn.Identity()
         for cls_head, bn_head in zip(self.cv3, self.cv4):
             assert(isinstance(cls_head, nn.Sequential))
             assert(isinstance(bn_head, BNContrastiveHead))
@@ -365,12 +383,25 @@ class WorldDetect(Detect):
             cls_head[-1] = conv
             
             bn_head.fuse()
-            
-    def forward(self, x, text):
+        
+        del self.gc
+        self.gc = nn.Identity()
+    
+    def get_tpe(self, tpe):
+        if tpe is None:
+            return None
+        return F.normalize(self.gc(tpe), dim=-1, p=2)
+    
+    def get_vpe(self, x, vpe):
+        if vpe.ndim == 4:
+            vpe = self.vpe(x, vpe)
+        assert(vpe.ndim == 3)
+        return vpe
+    
+    def forward(self, x, cls_pe):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
-        text = self.gc(text)
         for i in range(self.nl):
-            x[i] = torch.cat((self.cv2[i](x[i]), self.cv4[i](self.cv3[i](x[i]), text)), 1)
+            x[i] = torch.cat((self.cv2[i](x[i]), self.cv4[i](self.cv3[i](x[i]), cls_pe)), 1)
         if self.training:
             return x
 
@@ -448,6 +479,69 @@ class VLDetect(WorldDetect):
         super().__init__(nc, embed, with_bn, ch)
         self.gc = LAdapter(embed)
     
+class WorldSegment(WorldDetect):
+    def __init__(self, nc=80, nm=32, npr=256, embed=512, with_bn=False, ch=()):
+        super().__init__(nc, embed, with_bn, ch)
+        self.nm = nm
+        self.npr = npr
+        self.proto = Proto(ch[0], self.npr, self.nm)
+        self.proto.upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        
+        c5 = max(ch[0] // 4, self.nm)
+        self.cv5 = nn.ModuleList(nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, self.nm, 1)) for x in ch)
+
+    def forward(self, x, text):
+        """Return model outputs and mask coefficients if training, otherwise return outputs and mask coefficients."""
+        p = self.proto(x[0])  # mask protos
+        bs = p.shape[0]  # batch size
+
+        mc = torch.cat([self.cv5[i](x[i]).view(bs, self.nm, -1) for i in range(self.nl)], 2)  # mask coefficients
+        x = WorldDetect.forward(self, x, text)
+        if self.training:
+            return x, mc, p
+        return (torch.cat([x, mc], 1), p) if self.export else (torch.cat([x[0], mc], 1), (x[1], mc, p))
+
+class SwiGLUFFN(nn.Module):
+    def __init__(
+        self,
+        gc,
+        e=4,
+        multiple_of=128
+    ) -> None:
+        super().__init__()
+        hd = e * gc * 2 // 3
+        mid = multiple_of * ((hd + multiple_of - 1) // multiple_of)
+        
+        self.w12 = nn.Linear(gc, 2 * mid)
+        self.w3 = nn.Linear(mid, gc)
+
+    def forward(self, x):
+        x12 = self.w12(x)
+        x1, x2 = x12.chunk(2, dim=-1)
+        hidden = F.silu(x1) * x2
+        return self.w3(hidden)
+
+class LAdapter(nn.Module):
+    def __init__(self, embed) -> None:
+        super().__init__()
+        self.m = SwiGLUFFN(embed)
+        nn.init.zeros_(self.m.w3.weight)
+        nn.init.zeros_(self.m.w3.bias)
+        self.alpha = 1
+        
+    def forward(self, x):
+        return x + self.alpha * self.m(x)
+
+class VLDetect(WorldDetect):
+    def __init__(self, nc=80, embed=512, with_bn=False, ch=()):
+        super().__init__(nc, embed, with_bn, ch)
+        self.gc = LAdapter(embed)
+
+class VLSegment(WorldSegment):
+    def __init__(self, nc=80, nm=32, npr=256, embed=512, with_bn=False, ch=()):
+        super().__init__(nc, nm, npr, embed, with_bn, ch)
+        self.gc = LAdapter(embed)
+
 class RTDETRDecoder(nn.Module):
     """
     Real-Time Deformable Transformer Decoder (RTDETRDecoder) module for object detection.
