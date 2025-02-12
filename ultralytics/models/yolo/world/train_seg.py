@@ -9,7 +9,7 @@ from ultralytics.utils import DEFAULT_CFG, RANK
 from ultralytics.utils.torch_utils import de_parallel
 from copy import copy
 from .train import WorldTrainer
-
+from .val import WorldSegValidator
 
 class WorldSegTrainer(WorldTrainer, yolo.segment.SegmentationTrainer):
     """
@@ -46,3 +46,9 @@ class WorldSegTrainer(WorldTrainer, yolo.segment.SegmentationTrainer):
 
         return model
 
+    def get_validator(self):
+        """Returns a DetectionValidator for YOLO model validation."""
+        self.loss_names = "box", "seg", "cls", "dfl"
+        return WorldSegValidator(
+            self.test_loader, save_dir=self.save_dir, args=copy(self.args), _callbacks=self.callbacks
+        )

@@ -10,7 +10,7 @@ from ultralytics.data.utils import check_det_dataset
 from ultralytics.models.yolo.model import WorldModel
 from copy import deepcopy
 
-class WorldVPValidatorMixin:
+class WorldValidatorMixin:
     @smart_inference_mode()
     def get_visual_pe(self, model):
         assert(isinstance(model, WorldModel))
@@ -82,22 +82,21 @@ class WorldVPValidatorMixin:
             
             names = [name.split("/")[0] for name in list(self.dataloader.dataset.data["names"].values())]
             
-            LOGGER.info("Validate using the text prompt.")
-            tpe = model.get_text_pe(names)
-            model.set_classes(names, tpe)
-            tp_stats = super().__call__(trainer, model)
-            tp_stats = self.add_prefix_for_metric(tp_stats, "tp")
-            self.args.half = False
+            if not self.args.load_vp:
+                LOGGER.info("Validate using the text prompt.")
+                tpe = model.get_text_pe(names)
+                model.set_classes(names, tpe)
+                tp_stats = super().__call__(trainer, model)
+                tp_stats = self.add_prefix_for_metric(tp_stats, "tp")
+                stats = tp_stats
+            else:
+                LOGGER.info("Validate using the visual prompt.")
+                vpe = self.get_visual_pe(model)
+                model.set_classes(names, vpe)
+                vp_stats = super().__call__(trainer, model)
+                vp_stats = self.add_prefix_for_metric(vp_stats, "vp")
+                stats = vp_stats
             
-            LOGGER.info("Validate using the visual prompt.")
-            vpe = self.get_visual_pe(model)
-            model.set_classes(names, vpe)
-            vp_stats = super().__call__(trainer, model)
-            fitness = vp_stats['fitness']
-            vp_stats = self.add_prefix_for_metric(vp_stats, "vp")
-            
-            stats = {**vp_stats, **tp_stats}
-            stats['fitness'] = fitness
             return stats
         else:
             if isinstance(model, WorldModel) and not hasattr(model, "pe"):
@@ -106,28 +105,28 @@ class WorldVPValidatorMixin:
                 model.eval().to(self.device)
                 data = check_det_dataset(self.args.data)
                 names = [name.split("/")[0] for name in list(data["names"].values())]
-                LOGGER.info("Validate using the text prompt.")
-                tpe = model.get_text_pe(names)
-                model.set_classes(names, tpe)
-                tp_stats = super().__call__(trainer, deepcopy(model))
-                tp_stats = self.add_prefix_for_metric(tp_stats, "tp")
-                self.args.half = False
                 
-                LOGGER.info("Validate using the visual prompt.")
-                vpe = self.get_visual_pe(model)
-                model.set_classes(names, vpe)
-                vp_stats = super().__call__(trainer, deepcopy(model))
-                fitness = vp_stats['fitness']
-                vp_stats = self.add_prefix_for_metric(vp_stats, "vp")
-                
-                stats = {**vp_stats, **tp_stats}
-                stats['fitness'] = fitness
+                if not self.args.load_vp:
+                    LOGGER.info("Validate using the text prompt.")
+                    tpe = model.get_text_pe(names)
+                    model.set_classes(names, tpe)
+                    tp_stats = super().__call__(trainer, deepcopy(model))
+                    tp_stats = self.add_prefix_for_metric(tp_stats, "tp")
+                    stats = tp_stats
+                else:
+                    LOGGER.info("Validate using the visual prompt.")
+                    vpe = self.get_visual_pe(model)
+                    model.set_classes(names, vpe)
+                    vp_stats = super().__call__(trainer, deepcopy(model))
+                    vp_stats = self.add_prefix_for_metric(vp_stats, "vp")
+                    stats = vp_stats
+
                 return stats
             else:    
                 return super().__call__(trainer, model)
 
-class WorldVPDetectValidator(WorldVPValidatorMixin, DetectionValidator):
+class WorldDetectValidator(WorldValidatorMixin, DetectionValidator):
     pass
 
-class WorldVPSegValidator(WorldVPValidatorMixin, SegmentationValidator):
+class WorldSegValidator(WorldValidatorMixin, SegmentationValidator):
     pass

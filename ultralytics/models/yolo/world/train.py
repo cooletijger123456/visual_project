@@ -8,7 +8,7 @@ from ultralytics.nn.tasks import WorldModel, WorldSegModel
 from ultralytics.utils import DEFAULT_CFG, RANK
 from ultralytics.utils.torch_utils import de_parallel
 from copy import copy
-
+from .val import WorldDetectValidator
 
 class WorldTrainer(yolo.detect.DetectionTrainer):
     """
@@ -45,6 +45,13 @@ class WorldTrainer(yolo.detect.DetectionTrainer):
 
         return model
 
+    def get_validator(self):
+        """Returns a DetectionValidator for YOLO model validation."""
+        self.loss_names = "box", "cls", "dfl"
+        return WorldDetectValidator(
+            self.test_loader, save_dir=self.save_dir, args=copy(self.args), _callbacks=self.callbacks
+        )
+    
     def build_dataset(self, img_path, mode="train", batch=None):
         """
         Build YOLO Dataset.
