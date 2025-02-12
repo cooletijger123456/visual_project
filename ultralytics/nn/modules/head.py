@@ -501,42 +501,6 @@ class WorldSegment(WorldDetect):
             return x, mc, p
         return (torch.cat([x, mc], 1), p) if self.export else (torch.cat([x[0], mc], 1), (x[1], mc, p))
 
-class SwiGLUFFN(nn.Module):
-    def __init__(
-        self,
-        gc,
-        e=4,
-        multiple_of=128
-    ) -> None:
-        super().__init__()
-        hd = e * gc * 2 // 3
-        mid = multiple_of * ((hd + multiple_of - 1) // multiple_of)
-        
-        self.w12 = nn.Linear(gc, 2 * mid)
-        self.w3 = nn.Linear(mid, gc)
-
-    def forward(self, x):
-        x12 = self.w12(x)
-        x1, x2 = x12.chunk(2, dim=-1)
-        hidden = F.silu(x1) * x2
-        return self.w3(hidden)
-
-class LAdapter(nn.Module):
-    def __init__(self, embed) -> None:
-        super().__init__()
-        self.m = SwiGLUFFN(embed)
-        nn.init.zeros_(self.m.w3.weight)
-        nn.init.zeros_(self.m.w3.bias)
-        self.alpha = 1
-        
-    def forward(self, x):
-        return x + self.alpha * self.m(x)
-
-class VLDetect(WorldDetect):
-    def __init__(self, nc=80, embed=512, with_bn=False, ch=()):
-        super().__init__(nc, embed, with_bn, ch)
-        self.gc = LAdapter(embed)
-
 class VLSegment(WorldSegment):
     def __init__(self, nc=80, nm=32, npr=256, embed=512, with_bn=False, ch=()):
         super().__init__(nc, nm, npr, embed, with_bn, ch)
