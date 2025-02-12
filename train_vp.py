@@ -12,11 +12,11 @@ data = dict(
         grounding_data=[
             dict(
                 img_path="../datasets/flickr/full_images/",
-                json_file="../datasets/flickr/annotations/final_flickr_separateGT_train_segm.json",
+                json_file="../datasets/flickr/annotations/final_flickr_separateGT_train.json",
             ),
             dict(
                 img_path="../datasets/mixed_grounding/gqa/images",
-                json_file="../datasets/mixed_grounding/annotations/final_mixed_train_no_coco_segm.json",
+                json_file="../datasets/mixed_grounding/annotations/final_mixed_train_no_coco.json",
             ),
         ],
     ),
@@ -34,7 +34,7 @@ extends = yaml_load(extend_cfg_path)
 assert(all(k in defaults for k in extends))
 LOGGER.info(f"Extends: {extends}")
 
-model = YOLOWorld("yolov8l-worldv2-vlhead-mobileclip-ladapterglu-imgsz800-alpha1-segm-det1.pt")
+model = YOLOWorld("yolov8l-worldv2-vlhead-mobileclip-ladapterglu-imgsz800-alpha1.pt")
 
 freeze = list(range(0, 22))
 for name, child in model.model.model[-1].named_children():
@@ -43,5 +43,5 @@ for name, child in model.model.model[-1].named_children():
 
 model.train(data=data, batch=128, epochs=5, **extends, close_mosaic=2, \
     optimizer='AdamW', lr0=2e-3, warmup_bias_lr=0.0, \
-        weight_decay=0.025, momentum=0.9, workers=4, \
+        weight_decay=0.025, momentum=0.9, \
         trainer=WorldVPTrainer, device='0,1,2,3,4,5,6,7', freeze=freeze, load_vp=True)
