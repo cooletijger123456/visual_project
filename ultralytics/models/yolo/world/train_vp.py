@@ -9,7 +9,7 @@ class WorldVPTrainer(WorldTrainerFromScratch):
     
     def get_validator(self):
         """Returns a DetectionValidator for YOLO model validation."""
-        self.loss_names = "box", "seg", "cls", "dfl"
+        self.loss_names = "box", "cls", "dfl"
         return WorldVPDetectValidator(
             self.test_loader, save_dir=self.save_dir, args=copy(self.args), _callbacks=self.callbacks
         )
@@ -17,6 +17,5 @@ class WorldVPTrainer(WorldTrainerFromScratch):
     def preprocess_batch(self, batch):
         """Preprocesses a batch of images for YOLOWorld training, adjusting formatting and dimensions as needed."""
         batch = super().preprocess_batch(batch)
-        if "visuals" in batch:
-            batch["visuals"] = batch["visuals"].to(self.device)
+        batch["visuals"] = batch["visuals"].to(self.device)
         return batch
