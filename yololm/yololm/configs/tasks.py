@@ -8,6 +8,14 @@ spi_datasets = [
         'type': 'objects365',
         'cache_path': 'data/Objects365v1/train.cache.npy',
     },
+    {
+        'type': 'flickr',
+        'cache_path': 'data/flickr/train.cache.npy',
+    },
+    {
+        'type': 'mixed_grounding',
+        'cache_path': 'data/mixed_grounding/train.cache.npy',
+    },
     # {
     #     "type": "PartDataset",
     #     "ann_file": "./data/part_data/pascal_part/pascalpart_train.json",

@@ -7,6 +7,7 @@ from torch.utils.data import ConcatDataset
 from yololm.utils import IGNORE_INDEX
 
 from .objects365 import Objects365V1Det
+from .goldg import GoldGDet
 from ..configs.tasks import spi_datasets
 
 @dataclass
@@ -83,6 +84,13 @@ def build_spi_dataset(dataset_config,
     dataset_type = dataset_config.pop('type')
     if dataset_type == 'objects365':
         dataset = Objects365V1Det(
+            **dataset_config,
+            tokenizer=tokenizer,
+            data_args=data_args,
+            **kwargs,
+        )
+    elif dataset_type in ["flickr", "mixed_grounding"]:
+        dataset = GoldGDet(
             **dataset_config,
             tokenizer=tokenizer,
             data_args=data_args,
