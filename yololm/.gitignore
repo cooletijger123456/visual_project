@@ -51,3 +51,4 @@ exp*/
 *.png
 image/
 pretrained
+!yololm/data
