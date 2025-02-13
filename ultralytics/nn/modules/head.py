@@ -304,21 +304,43 @@ class Classify(nn.Module):
 class VisualPromptEncoder(nn.Module):
     def __init__(self, ch, c3, embed):
         super().__init__()
-        self.cv = nn.ModuleList(nn.Sequential(Conv(x, c3, 3)) for x in ch)
-        self.cv[0].append(nn.Sequential(Conv(c3, c3, 3), nn.Conv2d(c3, embed, 1)))
-        self.cv[1].append(nn.Sequential(Conv(c3, c3, 3), nn.Conv2d(c3, embed, 1), nn.Upsample(scale_factor=2, mode='nearest')))
-        self.cv[2].append(nn.Sequential(Conv(c3, c3, 3), nn.Conv2d(c3, embed, 1), nn.Upsample(scale_factor=4, mode='nearest')))
+        self.cv1 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3)) for x in ch)
+        self.cv1[1].append(nn.Upsample(scale_factor=2))
+        self.cv1[2].append(nn.Upsample(scale_factor=4))
+        
+        self.cv2 = nn.ModuleList(nn.Sequential(Conv(x, c3, 1)) for x in ch)
+        self.cv2[1].append(nn.Upsample(scale_factor=2))
+        self.cv2[2].append(nn.Upsample(scale_factor=4))
+        
+        self.c = 16
+        self.cv3 = nn.Conv2d(3 * c3, embed, 1)
+        self.cv4 = nn.Conv2d(3 * c3, self.c, 3, padding=1)
 
-    def forward(self, x, vp, epsilon=1e-8):
-        y = [self.cv[i](xi) for i, xi in enumerate(x)]
-        y = torch.stack(y, dim=1).mean(dim=1)
-        vp = vp / (vp.sum(dim=(-1, -2), keepdim=True) + epsilon)
-        vpe = torch.einsum("bchw,bqhw->bqc", y, vp)
-        vpe = F.normalize(vpe, dim=-1, p=2)
-        output = torch.zeros_like(vpe)
-        valid_index = vp.sum(dim=(-1,-2)) > 0
-        output[valid_index] = vpe[valid_index]
-        return output
+    def forward(self, x, vp):
+        y = [self.cv2[i](xi) for i, xi in enumerate(x)]
+        y = self.cv4(torch.cat(y, dim=1))
+        
+        x = [self.cv1[i](xi) for i, xi in enumerate(x)]
+        x = self.cv3(torch.cat(x, dim=1))
+        
+        B, C = x.shape[:2]  # batch size
+
+        Q = vp.shape[1]
+        
+        # Flatten features and scores to make it easier to work with
+        x = x.view(B, C, -1)  # B * C * (H*W + H/2*W/2 + H/4*W/4)
+        y = y.view(B, 1, self.c, -1)  # B * 1 * (H*W + H/2*W/2 + H/4*W/4)
+        vp = vp.view(B, Q, 1, -1)
+
+        # Compute the softmax scores over all feature map elements for each mask
+        score = y * vp + torch.logical_not(vp) * torch.finfo(y.dtype).min  # B * Q * (H*W + H/2*W/2 + H/4*W/4)
+ 
+        score = F.softmax(score, dim=-1, dtype=torch.float).to(score.dtype)
+
+        # Use the softmax scores to aggregate features from all feature maps
+        aggregated = score.transpose(-2, -3) @ x.reshape(B, self.c, C // self.c, -1).transpose(-1, -2)
+        
+        return F.normalize(aggregated.transpose(-2, -3).reshape(B, Q, -1), dim=-1, p=2)
 
 class WorldDetect(Detect):
     """Head for integrating YOLO detection models with semantic understanding from text embeddings."""
