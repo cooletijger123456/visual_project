@@ -229,7 +229,7 @@ class BaseModel(nn.Module):
                 if isinstance(m, MaxSigmoidAttnBlock):
                     assert(isinstance(self, WorldModel))
                     m.fuse(self.pe.to(device))
-                if isinstance(m, WorldDetect):
+                if isinstance(m, WorldDetect) and hasattr(self, 'pe'):
                     assert(isinstance(self, WorldModel))
                     m.fuse(self.pe.to(device))
             self.info(verbose=verbose)
