@@ -280,13 +280,15 @@ class YOLOMultiModalDataset(YOLODataset):
         """Add texts information for multi-modal model training."""
         labels = super().update_labels_info(label)
         # NOTE: some categories are concatenated with its synonyms by `/`.
-        labels["texts"] = [v.split("/") for _, v in self.data["names"].items()]
+        if not self.single_cls:
+            labels["texts"] = [v.split("/") for _, v in self.data["names"].items()]
+        
         return labels
 
     def build_transforms(self, hyp=None):
         """Enhances data transformations with optional text augmentation for multi-modal training."""
         transforms = super().build_transforms(hyp)
-        if self.augment:
+        if self.augment and not self.single_cls:
             # NOTE: hard-coded the args for now.
             index = -2 if self.load_vp else -1
             transforms.insert(index, RandomLoadText(text_model=hyp.text_model, max_samples=min(self.data["nc"], 80), padding=True))
@@ -336,7 +338,7 @@ class GroundingDataset(YOLODataset):
     def build_transforms(self, hyp=None):
         """Configures augmentations for training with optional text loading; `hyp` adjusts augmentation intensity."""
         transforms = super().build_transforms(hyp)
-        if self.augment:
+        if self.augment and not self.single_cls:
             # NOTE: hard-coded the args for now.
             index = -2 if self.load_vp else -1
             transforms.insert(index, RandomLoadText(text_model=hyp.text_model, max_samples=80, padding=True))

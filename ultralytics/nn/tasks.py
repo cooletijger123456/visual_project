@@ -728,7 +728,8 @@ class WorldModel(DetectionModel):
             self.criterion = self.init_criterion()
 
         if preds is None:
-            preds = self.forward(batch["img"], tpe=batch["txt_feats"], vpe=batch["visuals"] if self.args.load_vp else None)
+            preds = self.forward(batch["img"], tpe=getattr(batch, "txt_feats", None), 
+                                 vpe=batch["visuals"] if self.args.load_vp else None)
         return self.criterion(preds, batch)
     
     def init_criterion(self):
