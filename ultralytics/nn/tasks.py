@@ -728,7 +728,7 @@ class WorldModel(DetectionModel):
             self.criterion = self.init_criterion()
 
         if preds is None:
-            preds = self.forward(batch["img"], tpe=getattr(batch, "txt_feats", None), 
+            preds = self.forward(batch["img"], tpe=batch.get("txt_feats", None), 
                                  vpe=batch["visuals"] if self.args.load_vp else None)
         return self.criterion(preds, batch)
     
@@ -1117,7 +1117,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args.append([ch[x] for x in f])
             if m is Segment or m is WorldSegment or m is VLSegment:
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
-            if m in {Detect, VLDetect, Segment, VLSegment, Pose, OBB}:
+            if m in {Detect, WorldDetect, VLDetect, Segment, WorldSegment, VLSegment, Pose, OBB}:
                 m.legacy = legacy
         elif m is RTDETRDecoder:  # special case, channels arg must be passed in index 1
             args.insert(1, [ch[x] for x in f])
