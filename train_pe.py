@@ -7,7 +7,7 @@ import torch
 
 os.environ["PYTHONHASHSEED"] = "0"
 
-data = "coco.yaml"
+data = "ultralytics/cfg/datasets/coco.yaml"
 
 model_path = "yolov8l-worldv2-vl.yaml"
 
@@ -24,7 +24,7 @@ path = "yolov8l-worldv2-vlhead-mobileclip-ladapterglu-imgsz800-alpha1-segm-det1"
 model = YOLOWorld(f"{path}.pt")
 
 # Ensure pe is set for classes
-names = yaml_load(data)['names'].values()
+names = list(yaml_load(data)['names'].values())
 tpe = model.get_text_pe(names)
 pe_path = "coco-pe.pt"
 torch.save({"names": names, "pe": tpe}, pe_path)

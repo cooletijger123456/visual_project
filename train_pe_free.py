@@ -1,5 +1,5 @@
 from ultralytics import YOLOWorld
-from ultralytics.models.yolo.world.train_pe import WorldPETrainer
+from ultralytics.models.yolo.world.train_pe import WorldPEFreeTrainer
 import os
 from ultralytics.nn.tasks import guess_model_scale
 from ultralytics.utils import yaml_load, LOGGER
@@ -54,4 +54,4 @@ freeze.extend(["22.cv3.0.0", "22.cv3.0.1", "22.cv3.1.0", "22.cv3.1.1", "22.cv3.2
 model.train(data=data, batch=128, epochs=5, **extends, close_mosaic=5, \
     optimizer='AdamW', lr0=2e-3, warmup_bias_lr=0.0, \
         weight_decay=0.025, momentum=0.9, workers=4, \
-        trainer=WorldPETrainer, device='0,1,2,3,4,5,6,7', freeze=freeze, single_cls=True, train_pe_path=pe_path)
+        trainer=WorldPEFreeTrainer, device='0,1,2,3,4,5,6,7', freeze=freeze, single_cls=True, train_pe_path=pe_path)
