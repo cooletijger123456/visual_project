@@ -342,9 +342,16 @@ class v8SegmentationLoss(v8DetectionLoss):
             if tuple(masks.shape[-2:]) != (mask_h, mask_w):  # downsample
                 masks = F.interpolate(masks[None], (mask_h, mask_w), mode="nearest")[0]
 
-            loss[1] = self.calculate_segmentation_loss(
-                fg_mask, masks, target_gt_idx, target_bboxes, batch_idx, proto, pred_masks, imgsz, self.overlap
-            )
+            try:
+                loss[1] = self.calculate_segmentation_loss(
+                    fg_mask, masks, target_gt_idx, target_bboxes, batch_idx, proto, pred_masks, imgsz, self.overlap
+                )
+            except Exception as e:
+                print("Mask loss on cpu")
+                torch.cuda.empty_cache()
+                loss[1] = self.calculate_segmentation_loss(
+                    fg_mask.cpu(), masks.cpu(), target_gt_idx.cpu(), target_bboxes.cpu(), batch_idx.cpu(), proto.cpu().float(), pred_masks.cpu().float(), imgsz.cpu(), self.overlap
+                ).to(loss.device)
 
         # WARNING: lines below prevent Multi-GPU DDP 'unused gradient' PyTorch errors, do not remove
         else:
