@@ -1,10 +1,12 @@
 from ultralytics import YOLOWorld
 
-model = YOLOWorld("yolov8l-worldv2-vlhead-mobileclip-ladapterglu-imgsz800-alpha1.pt")
+model = YOLOWorld("yolov8l-worldv2-vl.yaml")
+model.load("runs/final/yolov8l-vl-seg/weights/best.pt")
+model.eval()
 
 filename = "ultralytics/cfg/datasets/lvis.yaml"
 
-model.val(data=filename, batch=1, split='minival', rect=False, imgsz=800)
+model.val(data=filename, batch=1, split='minival', rect=False)
 
 # Fixed AP
 # model.val(data=data['yaml_file'], batch=1, split='minival', rect=False, imgsz=800, max_det=1000)

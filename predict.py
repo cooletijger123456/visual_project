@@ -1,7 +1,8 @@
 from ultralytics import YOLOWorld
 
-model = YOLOWorld("yolov8m-worldv2.pt")
+model = YOLOWorld("runs/final/yolov8l-vl-seg/weights/best.pt")
 
-model.set_classes(["person"])
+names = ["person"]
+model.set_classes(names, model.get_text_pe(names))
 
-model.predict('ultralytics/assets/zidane.jpg', save=True)
+model.predict('ultralytics/assets/bus.jpg', save=True)
