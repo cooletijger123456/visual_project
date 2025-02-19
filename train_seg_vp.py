@@ -1,11 +1,12 @@
 from ultralytics import YOLOWorld
 from ultralytics.models.yolo.world.train_seg_vp import WorldSegVPTrainer
+from ultralytics.models.yolo.world.train_vp import WorldVPTrainer
 import os
 from ultralytics.nn.tasks import guess_model_scale
 from ultralytics.utils import yaml_load, LOGGER
 
 os.environ["PYTHONHASHSEED"] = "0"
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+# os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 data = dict(
     train=dict(
@@ -35,7 +36,7 @@ extends = yaml_load(extend_cfg_path)
 assert(all(k in defaults for k in extends))
 LOGGER.info(f"Extends: {extends}")
 
-model = YOLOWorld("yolov8l-worldv2-vlhead-mobileclip-ladapterglu-imgsz800-alpha1-segm.pt")
+model = YOLOWorld("yolov8l-vl-seg-omf-det.pt")
 # model = YOLOWorld("yolov8l-worldv2-vlhead-mobileclip-ladapterglu-imgsz800-alpha1-segm-det1.pt")
 # WorldSegVPTrainer => WorldVPTrainer
 
@@ -47,4 +48,4 @@ for name, child in model.model.model[-1].named_children():
 model.train(data=data, batch=128, epochs=5, **extends, close_mosaic=5, \
     optimizer='AdamW', lr0=2e-3, warmup_bias_lr=0.0, \
         weight_decay=0.025, momentum=0.9, workers=4, \
-        trainer=WorldSegVPTrainer, device='0,1,2,3,4,5,6,7', freeze=freeze, load_vp=True)
+        trainer=WorldVPTrainer, device='0,1,2,3,4,5,6,7', freeze=freeze, load_vp=True)
