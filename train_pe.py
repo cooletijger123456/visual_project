@@ -14,13 +14,13 @@ model_path = "yolov8l-worldv2-vl.yaml"
 scale = guess_model_scale(model_path)
 cfg_dir = "ultralytics/cfg"
 default_cfg_path = f"{cfg_dir}/default.yaml"
-extend_cfg_path = f"{cfg_dir}/{scale}_train.yaml"
+extend_cfg_path = f"{cfg_dir}/coco_{scale}_train.yaml"
 defaults = yaml_load(default_cfg_path)
 extends = yaml_load(extend_cfg_path)
 assert(all(k in defaults for k in extends))
 LOGGER.info(f"Extends: {extends}")
 
-path = "yolov8l-worldv2-vlhead-mobileclip-ladapterglu-imgsz800-alpha1-segm-det1"
+path = "yolov8l-vl-seg-omf-det"
 model = YOLOWorld(f"{path}.pt")
 
 # Ensure pe is set for classes
@@ -36,7 +36,9 @@ for name, child in model.model.model[-1].named_children():
 
 freeze.extend(["22.cv3.0.0", "22.cv3.0.1", "22.cv3.1.0", "22.cv3.1.1", "22.cv3.2.0", "22.cv3.2.1"])
         
-model.train(data=data, batch=128, epochs=5, **extends, close_mosaic=5, \
+model.train(data=data, batch=128, epochs=5, **extends, close_mosaic=1, \
     optimizer='AdamW', lr0=2e-3, warmup_bias_lr=0.0, \
         weight_decay=0.025, momentum=0.9, workers=4, \
         trainer=WorldPETrainer, device='0,1,2,3,4,5,6,7', freeze=freeze, train_pe_path=pe_path)
+
+# model.train(data=data, epochs=500, batch=128, device="0,1,2,3,4,5,6,7", **extends)
