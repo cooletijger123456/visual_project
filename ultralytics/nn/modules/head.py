@@ -315,6 +315,8 @@ class VisualPromptEncoder(nn.Module):
         self.c = 16
         self.cv3 = nn.Conv2d(3 * c3, embed, 1)
         self.cv4 = nn.Conv2d(3 * c3, self.c, 3, padding=1)
+        self.cv5 = nn.Conv2d(1, self.c, 3, padding=1)
+        self.cv6 = nn.Sequential(Conv(2 * self.c, self.c, 3), nn.Conv2d(self.c, self.c, 3, padding=1))
 
     def forward(self, x, vp):
         y = [self.cv2[i](xi) for i, xi in enumerate(x)]
@@ -323,14 +325,20 @@ class VisualPromptEncoder(nn.Module):
         x = [self.cv1[i](xi) for i, xi in enumerate(x)]
         x = self.cv3(torch.cat(x, dim=1))
         
-        B, C = x.shape[:2]  # batch size
+        B, C, H, W = x.shape  # batch size
 
         Q = vp.shape[1]
         
         # Flatten features and scores to make it easier to work with
         x = x.view(B, C, -1)  # B * C * (H*W + H/2*W/2 + H/4*W/4)
-        y = y.view(B, 1, self.c, -1)  # B * 1 * (H*W + H/2*W/2 + H/4*W/4)
-        vp = vp.view(B, Q, 1, -1)
+
+        y = y.reshape(B, 1, self.c, H, W).expand(-1, Q, -1, -1, -1).reshape(B * Q, self.c, H, W)
+        vp = vp.reshape(B, Q, 1, H, W).reshape(B * Q, 1, H, W)
+        
+        y = self.cv6(torch.cat((y, self.cv5(vp)), dim=1))
+        
+        y = y.reshape(B, Q, self.c, -1)
+        vp = vp.reshape(B, Q, 1, -1)
 
         # Compute the softmax scores over all feature map elements for each mask
         score = y * vp + torch.logical_not(vp) * torch.finfo(y.dtype).min  # B * Q * (H*W + H/2*W/2 + H/4*W/4)
