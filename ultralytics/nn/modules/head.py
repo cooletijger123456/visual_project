@@ -485,10 +485,11 @@ class Residual(nn.Module):
     def __init__(self, m) -> None:
         super().__init__()
         self.m = m
-        self.residual_weight = nn.Parameter(torch.ones(1) * 1e-6)
+        nn.init.zeros_(self.m.w3.bias)
+        nn.init.constant_(self.m.w3.weight, 1e-6)
         
     def forward(self, x):
-        return x + self.residual_weight * self.m(x)
+        return x + self.m(x)
 
 class VLDetect(WorldDetect):
     def __init__(self, nc=80, embed=512, with_bn=False, ch=()):
@@ -501,7 +502,6 @@ class WorldSegment(WorldDetect):
         self.nm = nm
         self.npr = npr
         self.proto = Proto(ch[0], self.npr, self.nm)
-        self.proto.upsample = nn.Upsample(scale_factor=2, mode='nearest')
         
         c5 = max(ch[0] // 4, self.nm)
         self.cv5 = nn.ModuleList(nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, self.nm, 1)) for x in ch)
