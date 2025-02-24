@@ -64,6 +64,7 @@ from ultralytics.nn.modules import (
     WorldSegment,
     VLSegment,
     v10Detect,
+    VocabHead,
     MaxSigmoidAttnBlock,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
@@ -649,7 +650,41 @@ class WorldModel(DetectionModel):
     @smart_inference_mode()
     def get_visual_pe(self, img, visual):
         return self(img, vpe=visual, return_vpe=True)
+
+    def set_vocab(self, vocab, names):
+        assert(not self.training)
+        head = self.model[-1]
+        assert(isinstance(head, WorldDetect))
         
+        # Cache anchors for head
+        device = next(self.parameters()).device
+        self(torch.empty(1, 3, self.args["imgsz"], self.args["imgsz"]).to(device))  # warmup
+        
+        self.model[-1].vh = nn.ModuleList(VocabHead(cls, pf[-1], loc[-1], enabled=i!=2) for i, (cls, pf, loc) in enumerate(zip(vocab, head.cv3, head.cv2)))
+        for loc_head, cls_head in zip(head.cv2, head.cv3):
+            assert(isinstance(loc_head, nn.Sequential))
+            assert(isinstance(cls_head, nn.Sequential))
+            del loc_head[-1]
+            del cls_head[-1]
+        self.model[-1].nc = len(names)
+        self.names = check_class_names(names)
+
+    def get_vocab(self, names):
+        assert(not self.training)
+        head = self.model[-1]
+        assert(isinstance(head, WorldDetect))
+        assert(not head.is_fused)
+        
+        tpe = self.get_text_pe(names)
+        self.set_classes(names, tpe)
+        self.fuse()
+
+        vocab = nn.ModuleList()
+        for cls_head in head.cv3:
+            assert(isinstance(cls_head, nn.Sequential))
+            vocab.append(cls_head[-1])
+        return vocab
+
     def set_classes(self, names, embeddings):
         """Set classes in advance so that model could do offline-inference without clip model."""
         assert(embeddings.ndim == 3)
