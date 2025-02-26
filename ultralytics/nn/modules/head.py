@@ -486,7 +486,7 @@ class Residual(nn.Module):
         super().__init__()
         self.m = m
         nn.init.zeros_(self.m.w3.bias)
-        nn.init.constant_(self.m.w3.weight, 1e-6)
+        nn.init.zeros_(self.m.w3.weight)
         
     def forward(self, x):
         return x + self.m(x)
