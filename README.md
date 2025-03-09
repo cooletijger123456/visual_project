@@ -144,6 +144,8 @@ python tools/generate_lvis_visual_prompt_data.py
 - For text prompts, `python val.py`.
 - For visual prompts, `python val_vp.py`
 
+For *Fixed AP*, please refer to the comments in `val.py` and `val_vp.py`.
+
 ### Prompt-free evaluation
 ```bash
 python val_pe_free.py
