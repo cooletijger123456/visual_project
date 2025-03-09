@@ -1,4 +1,5 @@
+overlap_mask: true
 scale: 0.9
-mixup: 0.1
+mixup: 0.15
 # Mask refine
-copy_paste: 0.1
+copy_paste: 0.3
