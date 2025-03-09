@@ -1,12 +1,12 @@
-from ultralytics import YOLOWorld
+from ultralytics import YOLOE
 import torch
 
-det_model = YOLOWorld("yolov8l-worldv2-vl.yaml")
+det_model = YOLOE("yoloe-v8l.yaml")
 
-state = torch.load("yolov8l-worldv2-vlhead-mobileclip-ladapterglu-imgsz800-alpha1-segm.pt")
+state = torch.load("yoloe-v8l-seg.pt")
 
 det_model.load(state["model"])
-det_model.save("yolov8l-worldv2-vlhead-mobileclip-ladapterglu-imgsz800-alpha1-segm-det.pt")
+det_model.save("yoloe-v8l-seg-det.pt")
 
-model = YOLOWorld("yolov8l-worldv2-vlhead-mobileclip-ladapterglu-imgsz800-alpha1-segm-det.pt")
+model = YOLOE("yoloe-v8l-seg-det.pt")
 print(model.args)

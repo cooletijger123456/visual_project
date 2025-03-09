@@ -4,7 +4,7 @@ import time
 from tqdm import tqdm
 
 import torch
-from ultralytics import YOLOWorld
+from ultralytics import YOLOE
 from ultralytics.utils import ops
 from ultralytics.data.utils import yaml_load
 from ultralytics.data.augment import LetterBox, ToTensor
@@ -42,8 +42,8 @@ def measure_inference_time(model, dataset, device="cuda"):
 
 @torch.inference_mode()
 def get_vl_model(model_prefix):
-    model = YOLOWorld(f'{model_prefix}-worldv2-vl.yaml')
-    model.load(f'runs/final5/{model_prefix}-vl-seg/weights/best.pt')
+    model = YOLOE(f'{model_prefix}.yaml')
+    model.load(f'runs/final5/{model_prefix}-seg/weights/best.pt')
     model.eval()
     model.cuda()
 
@@ -58,8 +58,8 @@ def get_vl_model(model_prefix):
 @torch.inference_mode()
 def get_vl_pf_model(model_prefix):
     
-    unfused_model = YOLOWorld(f"{model_prefix}-worldv2-vl.yaml")
-    unfused_model.load(f"runs/final5/{model_prefix}-vl-seg/weights/best.pt")
+    unfused_model = YOLOE(f"{model_prefix}.yaml")
+    unfused_model.load(f"pretrain/{model_prefix}-seg/weights/best.pt")
     unfused_model.eval()
     unfused_model.cuda()
 
@@ -69,24 +69,12 @@ def get_vl_pf_model(model_prefix):
     vocab = unfused_model.get_vocab(names)
 
     torch.cuda.empty_cache()
-    model = YOLOWorld(f"runs/final5/{model_prefix}-vl-seg-pf/weights/best.pt").cuda()
+    model = YOLOE(f"runs/final5/{model_prefix}-vl-seg-pf/weights/best.pt").cuda()
     model.eval()
     model.set_vocab(vocab, names=names)
     model.model.model[-1].is_fused = True
     model.model.model[-1].conf = 0.001
     model.model.model[-1].max_det = 1000
-    model.fuse()
-    return model.model
-
-@torch.inference_mode()
-def get_yw_model(model_prefix):
-    model = YOLOWorld(f"{model_prefix}-worldv2.yaml").cuda()
-    model.load(f"{model_prefix}-worldv2.pt")
-    model.eval()
-    filename = "ultralytics/cfg/datasets/lvis.yaml"
-    data = yaml_load(filename, append_filename=True)
-    names = [name.split("/")[0] for name in data["names"].values()]
-    model.set_classes(names)
     model.fuse()
     return model.model
 

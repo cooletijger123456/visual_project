@@ -59,10 +59,8 @@ from ultralytics.nn.modules import (
     RTDETRDecoder,
     SCDown,
     Segment,
-    WorldDetect,
-    VLDetect,
-    WorldSegment,
-    VLSegment,
+    YOLOEDetect,
+    YOLOESegment,
     v10Detect,
     VocabHead,
     MaxSigmoidAttnBlock,
@@ -228,10 +226,10 @@ class BaseModel(nn.Module):
                     m.forward = m.forward_fuse
                 device = next(self.model.parameters()).device
                 if isinstance(m, MaxSigmoidAttnBlock):
-                    assert(isinstance(self, WorldModel))
+                    assert(isinstance(self, YOLOEModel))
                     m.fuse(self.pe.to(device))
-                if isinstance(m, WorldDetect) and hasattr(self, 'pe'):
-                    assert(isinstance(self, WorldModel))
+                if isinstance(m, YOLOEDetect) and hasattr(self, 'pe'):
+                    assert(isinstance(self, YOLOEModel))
                     m.fuse(self.pe.to(device))
             self.info(verbose=verbose)
 
@@ -273,7 +271,7 @@ class BaseModel(nn.Module):
         """
         self = super()._apply(fn)
         m = self.model[-1]  # Detect()
-        if isinstance(m, Detect):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect, WorldSegment
+        if isinstance(m, Detect):  # includes all Detect subclasses like Segment, Pose, OBB, YOLOEDetect, YOLOESegment
             m.stride = fn(m.stride)
             m.anchors = fn(m.anchors)
             m.strides = fn(m.strides)
@@ -339,7 +337,7 @@ class DetectionModel(BaseModel):
 
         # Build strides
         m = self.model[-1]  # Detect()
-        if isinstance(m, Detect):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect, WorldSegment
+        if isinstance(m, Detect):  # includes all Detect subclasses like Segment, Pose, OBB, YOLOEDetect, YOLOESegment
             s = 256  # 2x min stride
             m.inplace = self.inplace
 
@@ -347,7 +345,7 @@ class DetectionModel(BaseModel):
                 """Performs a forward pass through the model, handling different Detect subclass types accordingly."""
                 if self.end2end:
                     return self.forward(x)["one2many"]
-                return self.forward(x)[0] if isinstance(m, (Segment, WorldSegment, Pose, OBB)) else self.forward(x)
+                return self.forward(x)[0] if isinstance(m, (Segment, YOLOESegment, Pose, OBB)) else self.forward(x)
 
             m.stride = torch.tensor([s / x.shape[-2] for x in _forward(torch.zeros(1, ch, s, s))])  # forward
             self.stride = m.stride
@@ -613,11 +611,11 @@ class RTDETRDetectionModel(DetectionModel):
         return x
 
 
-class WorldModel(DetectionModel):
-    """YOLOv8 World Model."""
+class YOLOEModel(DetectionModel):
+    """YOLOE Model."""
 
-    def __init__(self, cfg="yolov8s-world.yaml", ch=3, nc=None, verbose=True):
-        """Initialize YOLOv8 world model with given config and parameters."""
+    def __init__(self, cfg="yoloe-v8s.yaml", ch=3, nc=None, verbose=True):
+        """Initialize YOLOE model with given config and parameters."""
         # Randomness
         # self.txt_feats = torch.randn(1, nc or 80, 512)  # features placeholder
         self.clip_model = None  # CLIP model placeholder
@@ -644,7 +642,7 @@ class WorldModel(DetectionModel):
         txt_feats = txt_feats.reshape(-1, len(text), txt_feats.shape[-1])
         
         head = self.model[-1]
-        assert(isinstance(head, WorldDetect))
+        assert(isinstance(head, YOLOEDetect))
         return head.get_tpe(txt_feats)
     
     @smart_inference_mode()
@@ -654,7 +652,7 @@ class WorldModel(DetectionModel):
     def set_vocab(self, vocab, names):
         assert(not self.training)
         head = self.model[-1]
-        assert(isinstance(head, WorldDetect))
+        assert(isinstance(head, YOLOEDetect))
         
         # Cache anchors for head
         device = next(self.parameters()).device
@@ -672,7 +670,7 @@ class WorldModel(DetectionModel):
     def get_vocab(self, names):
         assert(not self.training)
         head = self.model[-1]
-        assert(isinstance(head, WorldDetect))
+        assert(isinstance(head, YOLOEDetect))
         assert(not head.is_fused)
         
         tpe = self.get_text_pe(names)
@@ -729,7 +727,7 @@ class WorldModel(DetectionModel):
                 self._profile_one_layer(m, x, dt)
             if isinstance(m, C2fAttn):
                 x = m(x, tpe or getattr(self, 'pe', torch.zeros(1, 80, 512)).to(x.device))
-            elif isinstance(m, WorldDetect):
+            elif isinstance(m, YOLOEDetect):
                 vpe = m.get_vpe(x, vpe) if vpe is not None else None
                 if return_vpe:
                     assert(vpe is not None)
@@ -774,11 +772,11 @@ class WorldModel(DetectionModel):
             return super().init_criterion()
 
 
-class WorldSegModel(WorldModel, SegmentationModel):
-    """YOLOv8-World segmentation model."""
+class YOLOESegModel(YOLOEModel, SegmentationModel):
+    """YOLOE segmentation model."""
 
-    def __init__(self, cfg="yolov8n-worldv2-seg.yaml", ch=3, nc=None, verbose=True):
-        """Initialize YOLOv8-World segmentation model with given config and parameters."""
+    def __init__(self, cfg="yoloe-v8s-seg.yaml", ch=3, nc=None, verbose=True):
+        """Initialize YOLOE segmentation model with given config and parameters."""
         super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
 
     def init_criterion(self):
@@ -927,7 +925,10 @@ def torch_safe_load(weight, safe_only=False):
                 "ultralytics.nn.modules.block.Silence": "torch.nn.Identity",  # YOLOv9e
                 "ultralytics.nn.tasks.YOLOv10DetectionModel": "ultralytics.nn.tasks.DetectionModel",  # YOLOv10
                 "ultralytics.utils.loss.v10DetectLoss": "ultralytics.utils.loss.E2EDetectLoss",  # YOLOv10
-                "ultralytics.nn.modules.head.VLAttnDetect": "ultralytics.nn.modules.head.VLDetect"
+                "ultralytics.nn.modules.head.VLDetect": "ultralytics.nn.modules.head.YOLOEDetect",
+                "ultralytics.nn.modules.head.VLSegment": "ultralytics.nn.modules.head.YOLOESegment",
+                "ultralytics.nn.tasks.WorldSegModel": "ultralytics.nn.tasks.YOLOESegModel",
+                "ultralytics.nn.tasks.WorldModel": "ultralytics.nn.tasks.YOLOEModel"
             },
         ):
             if safe_only:
@@ -1150,11 +1151,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
-        elif m in {Detect, WorldDetect, VLDetect, Segment, WorldSegment, VLSegment, Pose, OBB, ImagePoolingAttn, v10Detect}:
+        elif m in {Detect, YOLOEDetect, Segment, YOLOESegment, Pose, OBB, ImagePoolingAttn, v10Detect}:
             args.append([ch[x] for x in f])
-            if m is Segment or m is WorldSegment or m is VLSegment:
+            if m is Segment or m is YOLOESegment:
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
-            if m in {Detect, WorldDetect, VLDetect, Segment, WorldSegment, VLSegment, Pose, OBB}:
+            if m in {Detect, YOLOEDetect, Segment, YOLOESegment, Pose, OBB}:
                 m.legacy = legacy
         elif m is RTDETRDecoder:  # special case, channels arg must be passed in index 1
             args.insert(1, [ch[x] for x in f])
@@ -1210,7 +1211,7 @@ def guess_model_scale(model_path):
         (str): The size character of the model's scale, which can be n, s, m, l, or x.
     """
     try:
-        return re.search(r"yolo[v]?\d+([nslmx])", Path(model_path).stem).group(1)  # noqa, returns n, s, m, l, or x
+        return re.search(r"yolo(e-)?[v]?\d+([nslmx])", Path(model_path).stem).group(2)  # noqa, returns n, s, m, l, or x
     except AttributeError:
         return ""
 
@@ -1256,7 +1257,7 @@ def guess_model_task(model):
             with contextlib.suppress(Exception):
                 return cfg2task(eval(x))
         for m in model.modules():
-            if isinstance(m, (Segment, WorldSegment)):
+            if isinstance(m, (Segment, YOLOESegment)):
                 return "segment"
             elif isinstance(m, Classify):
                 return "classify"
@@ -1264,7 +1265,7 @@ def guess_model_task(model):
                 return "pose"
             elif isinstance(m, OBB):
                 return "obb"
-            elif isinstance(m, (Detect, WorldDetect, v10Detect)):
+            elif isinstance(m, (Detect, YOLOEDetect, v10Detect)):
                 return "detect"
 
     # Guess from model filename

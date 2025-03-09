@@ -74,7 +74,7 @@ from ultralytics.data.dataset import YOLODataset
 from ultralytics.data.utils import check_cls_dataset, check_det_dataset
 from ultralytics.nn.autobackend import check_class_names, default_class_names
 from ultralytics.nn.modules import C2f, Detect, RTDETRDecoder
-from ultralytics.nn.tasks import DetectionModel, SegmentationModel, WorldModel
+from ultralytics.nn.tasks import DetectionModel, SegmentationModel, YOLOEModel
 from ultralytics.utils import (
     ARM64,
     DEFAULT_CFG,
@@ -252,13 +252,7 @@ class Exporter:
             elif self.args.batch != 1:  # see github.com/ultralytics/ultralytics/pull/13420
                 LOGGER.warning("WARNING ⚠️ Edge TPU export requires batch size 1, setting batch=1.")
                 self.args.batch = 1
-        if isinstance(model, WorldModel):
-            LOGGER.warning(
-                "WARNING ⚠️ YOLOWorld (original version) export is not supported to any format.\n"
-                "WARNING ⚠️ YOLOWorldv2 models (i.e. 'yolov8s-worldv2.pt') only support export to "
-                "(torchscript, onnx, openvino, engine, coreml) formats. "
-                "See https://docs.ultralytics.com/models/yolo-world for details."
-            )
+
         if self.args.int8 and not self.args.data:
             self.args.data = DEFAULT_CFG.data or TASK2DATA[getattr(model, "task", "detect")]  # assign default data
             LOGGER.warning(
@@ -543,7 +537,7 @@ class Exporter:
             # Generate calibration data for integer quantization
             ignored_scope = None
             if isinstance(self.model.model[-1], Detect):
-                # Includes all Detect subclasses like Segment, Pose, OBB, WorldDetect
+                # Includes all Detect subclasses like Segment, Pose, OBB, YOLOEDetect
                 head_module_name = ".".join(list(self.model.named_modules())[-1][0].split(".")[:2])
                 ignored_scope = nncf.IgnoredScope(  # ignore operations
                     patterns=[

@@ -1,5 +1,5 @@
-from ultralytics import YOLOWorld
-from ultralytics.models.yolo.world.train_pe import WorldPEFreeTrainer
+from ultralytics import YOLOE
+from ultralytics.models.yolo.yoloe.train_pe import YOLOEPEFreeTrainer
 import os
 from ultralytics.nn.tasks import guess_model_scale
 from ultralytics.utils import yaml_load, LOGGER
@@ -24,7 +24,7 @@ data = dict(
     val=dict(yolo_data=["lvis.yaml"]),
 )
 
-model_path = "yolov8l-worldv2-vl.yaml"
+model_path = "yoloe-v8l.yaml"
 
 scale = guess_model_scale(model_path)
 cfg_dir = "ultralytics/cfg"
@@ -35,7 +35,7 @@ extends = yaml_load(extend_cfg_path)
 assert(all(k in defaults for k in extends))
 LOGGER.info(f"Extends: {extends}")
 
-model = YOLOWorld("yolov8l-vl-seg-det.pt")
+model = YOLOE("yoloe-v8l-seg-det.pt")
 
 # Ensure pe is set for classes
 names = ["object"]
@@ -53,4 +53,4 @@ freeze.extend(["22.cv3.0.0", "22.cv3.0.1", "22.cv3.1.0", "22.cv3.1.1", "22.cv3.2
 model.train(data=data, batch=128, epochs=1, **extends, close_mosaic=1, \
     optimizer='AdamW', lr0=2e-3, warmup_bias_lr=0.0, \
         weight_decay=0.025, momentum=0.9, workers=4, \
-        trainer=WorldPEFreeTrainer, device='0,1,2,3,4,5,6,7', freeze=freeze, single_cls=True, train_pe_path=pe_path)
+        trainer=YOLOEPEFreeTrainer, device='0,1,2,3,4,5,6,7', freeze=freeze, single_cls=True, train_pe_path=pe_path)

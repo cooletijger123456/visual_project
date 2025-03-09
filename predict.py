@@ -1,6 +1,6 @@
-from ultralytics import YOLOWorld
+from ultralytics import YOLOE
 
-model = YOLOWorld("runs/final/yolov8l-vl-seg/weights/best.pt")
+model = YOLOE("runs/final/yolov8l-vl-seg/weights/best.pt")
 
 names = ["person"]
 model.set_classes(names, model.get_text_pe(names))

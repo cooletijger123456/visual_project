@@ -1,7 +1,7 @@
-from ultralytics import YOLOWorld
+from ultralytics import YOLOE
 from ultralytics.models.yolo.detect import DetectionValidator
 
-model = YOLOWorld("runs/final/yolov8l-vl-seg-pf/weights/best.pt")
+model = YOLOE("runs/final/yolov8l-vl-seg-pf/weights/best.pt")
 
 filename = "ultralytics/cfg/datasets/lvis.yaml"
 

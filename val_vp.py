@@ -1,6 +1,8 @@
-from ultralytics import YOLOWorld
+from ultralytics import YOLOE
 
-model = YOLOWorld("runs/detect/train7/weights/best.pt")
+model = YOLOE("yoloe-v8l.yaml")
+model.load("pretrain/yoloe-v8l-seg.pt")
+model.eval()
 
 filename = "ultralytics/cfg/datasets/lvis.yaml"
 

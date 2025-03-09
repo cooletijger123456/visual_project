@@ -1,5 +1,5 @@
-from ultralytics import YOLOWorld
-from ultralytics.models.yolo.world.train_world import WorldTrainerFromScratch
+from ultralytics import YOLOE
+from ultralytics.models.yolo.yoloe.train_yoloe import YOLOETrainerFromScratch
 import os
 from ultralytics.nn.tasks import guess_model_scale
 from ultralytics.utils import yaml_load, LOGGER
@@ -23,7 +23,7 @@ data = dict(
     val=dict(yolo_data=["lvis.yaml"]),
 )
 
-model_path = "yolov8l-worldv2-vl.yaml"
+model_path = "yoloe-v8l.yaml"
 
 scale = guess_model_scale(model_path)
 cfg_dir = "ultralytics/cfg"
@@ -34,9 +34,9 @@ extends = yaml_load(extend_cfg_path)
 assert(all(k in defaults for k in extends))
 LOGGER.info(f"Extends: {extends}")
 
-model = YOLOWorld(model_path)
+model = YOLOE(model_path)
 
 model.train(data=data, batch=128, epochs=30, **extends, close_mosaic=2, \
     optimizer='AdamW', lr0=2e-3, warmup_bias_lr=0.0, \
         weight_decay=0.025, momentum=0.9, \
-        trainer=WorldTrainerFromScratch, device='0,1,2,3,4,5,6,7')
+        trainer=YOLOETrainerFromScratch, device='0,1,2,3,4,5,6,7')

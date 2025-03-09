@@ -18,7 +18,7 @@ from .transformer import MLP, DeformableTransformerDecoder, DeformableTransforme
 from .utils import bias_init_with_prob, linear_init
 from torch.nn import functional as F
 
-__all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder", "v10Detect", "WorldDetect", "WorldSegment"
+__all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder", "v10Detect", "YOLOEDetect", "YOLOESegment"
 
 
 class Detect(nn.Module):
@@ -381,7 +381,7 @@ class VocabHead(nn.Module):
             loc_feat = self.loc(loc_feat)
             return (loc_feat, cls_feat.flatten(2)), torch.ones(cls_feat.shape[2] * cls_feat.shape[3], device=cls_feat.device, dtype=torch.bool)
 
-class WorldDetect(Detect):
+class YOLOEDetect(Detect):
     is_fused = False
     
     """Head for integrating YOLO detection models with semantic understanding from text embeddings."""
@@ -407,7 +407,7 @@ class WorldDetect(Detect):
         
         self.cv4 = nn.ModuleList(BNContrastiveHead(embed) if with_bn else ContrastiveHead() for _ in ch)
         
-        self.gc = nn.Identity()
+        self.gc = Residual(SwiGLUFFN(embed, embed))
         self.vpe = VisualPromptEncoder(ch, c3, embed)
         self.embed = embed
     
@@ -549,17 +549,14 @@ class Residual(nn.Module):
         super().__init__()
         self.m = m
         nn.init.zeros_(self.m.w3.bias)
+        # For models with l scale, please change the initialization to
+        # nn.init.constant_(self.m.w3.weight, 1e-6)
         nn.init.zeros_(self.m.w3.weight)
         
     def forward(self, x):
         return x + self.m(x)
-
-class VLDetect(WorldDetect):
-    def __init__(self, nc=80, embed=512, with_bn=False, ch=()):
-        super().__init__(nc, embed, with_bn, ch)
-        self.gc = Residual(SwiGLUFFN(embed, embed))
     
-class WorldSegment(WorldDetect):
+class YOLOESegment(YOLOEDetect):
     def __init__(self, nc=80, nm=32, npr=256, embed=512, with_bn=False, ch=()):
         super().__init__(nc, embed, with_bn, ch)
         self.nm = nm
@@ -575,15 +572,10 @@ class WorldSegment(WorldDetect):
         bs = p.shape[0]  # batch size
 
         mc = torch.cat([self.cv5[i](x[i]).view(bs, self.nm, -1) for i in range(self.nl)], 2)  # mask coefficients
-        x = WorldDetect.forward(self, x, text)
+        x = YOLOEDetect.forward(self, x, text)
         if self.training:
             return x, mc, p
         return (torch.cat([x, mc], 1), p) if self.export else (torch.cat([x[0], mc], 1), (x[1], mc, p))
-
-class VLSegment(WorldSegment):
-    def __init__(self, nc=80, nm=32, npr=256, embed=512, with_bn=False, ch=()):
-        super().__init__(nc, nm, npr, embed, with_bn, ch)
-        self.gc = Residual(SwiGLUFFN(embed, embed))
 
 class RTDETRDecoder(nn.Module):
     """

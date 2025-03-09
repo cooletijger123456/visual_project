@@ -1,5 +1,5 @@
-from ultralytics import YOLOWorld
-from ultralytics.models.yolo.world.train_pe import WorldPETrainer, WorldPESegTrainer
+from ultralytics import YOLOE
+from ultralytics.models.yolo.yoloe.train_pe import YOLOEPETrainer, YOLOEPESegTrainer
 import os
 from ultralytics.nn.tasks import guess_model_scale
 from ultralytics.utils import yaml_load, LOGGER
@@ -9,7 +9,7 @@ os.environ["PYTHONHASHSEED"] = "0"
 
 data = "ultralytics/cfg/datasets/coco.yaml"
 
-model_path = "yolov8l-worldv2-vl-seg.yaml"
+model_path = "yoloe-v8l-seg.yaml"
 
 scale = guess_model_scale(model_path)
 cfg_dir = "ultralytics/cfg"
@@ -20,7 +20,7 @@ extends = yaml_load(extend_cfg_path)
 assert(all(k in defaults for k in extends))
 LOGGER.info(f"Extends: {extends}")
 
-model = YOLOWorld("yolov8l-vl-seg.pt")
+model = YOLOE("yoloe-v8l-seg.pt")
 
 # Ensure pe is set for classes
 names = list(yaml_load(data)['names'].values())
@@ -39,4 +39,4 @@ model.train(data=data, epochs=10, close_mosaic=5, batch=128,
             optimizer='AdamW', lr0=1e-3, warmup_bias_lr=0.0, \
             weight_decay=0.025, momentum=0.9, workers=4, \
             device="0,1,2,3,4,5,6,7", **extends, \
-            trainer=WorldPESegTrainer, freeze=freeze, train_pe_path=pe_path)
+            trainer=YOLOEPESegTrainer, freeze=freeze, train_pe_path=pe_path)
