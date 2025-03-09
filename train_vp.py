@@ -39,10 +39,11 @@ LOGGER.info(f"Extends: {extends}")
 model = YOLOE("yoloe-v8s-seg-det.pt")
 # YOLOESegVPTrainer => YOLOEVPTrainer
 
-freeze = list(range(0, 22))
+head_index = len(model.model.model) - 1
+freeze = list(range(0, head_index))
 for name, child in model.model.model[-1].named_children():
-    if 'vpe' not in name:
-        freeze.append(f"22.{name}")
+    if 'savpe' not in name:
+        freeze.append(f"{head_index}.{name}")
 
 # For s/m, please set lr0=8e-3
 model.train(data=data, batch=128, epochs=2, **extends, close_mosaic=2, \
