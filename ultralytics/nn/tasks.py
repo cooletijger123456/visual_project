@@ -925,11 +925,11 @@ def torch_safe_load(weight, safe_only=False):
                 "ultralytics.nn.modules.block.Silence": "torch.nn.Identity",  # YOLOv9e
                 "ultralytics.nn.tasks.YOLOv10DetectionModel": "ultralytics.nn.tasks.DetectionModel",  # YOLOv10
                 "ultralytics.utils.loss.v10DetectLoss": "ultralytics.utils.loss.E2EDetectLoss",  # YOLOv10
-                "ultralytics.nn.modules.head.VLDetect": "ultralytics.nn.modules.head.YOLOEDetect",
-                "ultralytics.nn.modules.head.VLSegment": "ultralytics.nn.modules.head.YOLOESegment",
-                "ultralytics.nn.tasks.WorldSegModel": "ultralytics.nn.tasks.YOLOESegModel",
-                "ultralytics.nn.tasks.WorldModel": "ultralytics.nn.tasks.YOLOEModel",
-                "ultralytics.nn.modules.head.VisualPromptEncoder": "ultralytics.nn.modules.head.SAVPE"
+                # "ultralytics.nn.modules.head.VLDetect": "ultralytics.nn.modules.head.YOLOEDetect",
+                # "ultralytics.nn.modules.head.VLSegment": "ultralytics.nn.modules.head.YOLOESegment",
+                # "ultralytics.nn.tasks.WorldSegModel": "ultralytics.nn.tasks.YOLOESegModel",
+                # "ultralytics.nn.tasks.WorldModel": "ultralytics.nn.tasks.YOLOEModel",
+                # "ultralytics.nn.modules.head.VisualPromptEncoder": "ultralytics.nn.modules.head.SAVPE"
             },
         ):
             if safe_only:
