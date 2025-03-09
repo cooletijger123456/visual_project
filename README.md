@@ -145,7 +145,7 @@ python tools/generate_lvis_visual_prompt_data.py
 - For text prompts, `python val.py`.
 - For visual prompts, `python val_vp.py`
 
-For *Fixed AP*, please refer to the comments in `val.py` and `val_vp.py`.
+For *Fixed AP*, please refer to the comments in `val.py` and `val_vp.py`, and use `tools/eval_fixed_ap.py` for evaluation.
 
 ### Prompt-free evaluation
 ```bash
@@ -169,9 +169,9 @@ The training includes three stages:
 
 | Images | Raw Annotations | Processed Annotations |
 |---|---|---|
-| [Objects365v1](https://opendatalab.com/OpenDataLab/Objects365_v1) | [objects365_train.json](https://opendatalab.com/OpenDataLab/Objects365_v1) | [objects365_train_segm.json]() |
-| [GQA](https://nlp.stanford.edu/data/gqa/images.zip) | [	final_mixed_train_noo_coco.json](https://huggingface.co/GLIPModel/GLIP/blob/main/mdetr_annotations/final_mixed_train_no_coco.json)  | [	final_mixed_train_noo_coco_segm.json]() |
-| [Flickr30k](https://shannon.cs.illinois.edu/DenotationGraph/) | [final_flickr_separateGT_train.json](https://huggingface.co/GLIPModel/GLIP/blob/main/mdetr_annotations/final_flickr_separateGT_train.json) | [final_flickr_separateGT_train_segm.json]() |
+| [Objects365v1](https://opendatalab.com/OpenDataLab/Objects365_v1) | [objects365_train.json](https://opendatalab.com/OpenDataLab/Objects365_v1) | [objects365_train_segm.json](https://huggingface.co/datasets/jameslahm/yoloe/blob/main/objects365_train_segm.json) |
+| [GQA](https://nlp.stanford.edu/data/gqa/images.zip) | [	final_mixed_train_noo_coco.json](https://huggingface.co/GLIPModel/GLIP/blob/main/mdetr_annotations/final_mixed_train_no_coco.json)  | [	final_mixed_train_noo_coco_segm.json](https://huggingface.co/datasets/jameslahm/yoloe/blob/main/final_mixed_train_no_coco_segm.json) |
+| [Flickr30k](https://shannon.cs.illinois.edu/DenotationGraph/) | [final_flickr_separateGT_train.json](https://huggingface.co/GLIPModel/GLIP/blob/main/mdetr_annotations/final_flickr_separateGT_train.json) | [final_flickr_separateGT_train_segm.json](https://huggingface.co/datasets/jameslahm/yoloe/blob/main/final_flickr_separateGT_train_segm.json) |
 
 For annotations, you can directly use our preprocessed ones or use the following script to obtain the processed annotations with segmentation masks.
 ```bash
@@ -242,7 +242,7 @@ python export.py
 
 ## Acknowledgement
 
-The code base is built with [ultralytics](https://github.com/ultralytics/ultralytics), [YOLO-World](), [MobileCLIP](), [lvis-api](), [CLIP](), and [GenerateU]().
+The code base is built with [ultralytics](https://github.com/ultralytics/ultralytics), [YOLO-World](https://github.com/AILab-CVC/YOLO-World), [MobileCLIP](https://github.com/apple/ml-mobileclip), [lvis-api](https://github.com/lvis-dataset/lvis-api), [CLIP](https://github.com/openai/CLIP), and [GenerateU](https://github.com/FoundationVision/GenerateU).
 
 Thanks for the great implementations! 
 
