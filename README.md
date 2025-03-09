@@ -206,16 +206,26 @@ wget https://docs-assets.developer.apple.com/ml-research/datasets/mobileclip/mob
 
 ### Text prompt
 ```bash
+# For models with l scale, please change the initialization by referring to the comments in Line 549 in ultralytics/nn/moduels/head.py
+# If you want to train YOLOE only for detection, you can use `train.py` 
 python train_seg.py
 ```
 
 ### Visual prompt
+> SAVPE is designed with the support of various visual prompts by unifying them in the mask format. Currently, to avoid the extensive training cost brought by visual prompts, YOLOE is trained using bounding boxes as visual prompts. And it can generalize to other types of visual inputs, such as handcrafted shape and points. During training, incorporating these diverse visual prompts and increasing training epochs can also enhance its capability for them.
 ```bash
-python train_seg_vp.py
+# For visual prompt, because only SAVPE is trained, we can adopt the detection pipleline with less training time
+
+# First, obtain the detection model
+python tools/convert_segm2det.py
+# Then, train the SAVPE module
+python train_vp.py
 ```
 
 ### Prompt free
 ```bash
+# Similar to visual prompt, because only the specialized prompt embedding is trained, we can adopt the detection pipleline with less training time
+python tools/convert_segm2det.py
 python train_pe_free.py
 ```
 
@@ -231,6 +241,7 @@ python train_pe.py
 ### Full tuning
 All parameters are trainable, for better performance
 ```bash
+# For models with s scale, please change the epochs to 160 for longer training
 python train_pe_all.py
 ```
 

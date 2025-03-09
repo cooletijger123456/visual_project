@@ -43,12 +43,13 @@ tpe = model.get_text_pe(names)
 pe_path = "free-pe.pt"
 torch.save({"names": names, "pe": tpe}, pe_path)
 
-freeze = [str(f) for f in range(0, 22)]
+head_index = len(model.model.model) - 1
+freeze = [str(f) for f in range(0, head_index)]
 for name, child in model.model.model[-1].named_children():
     if 'cv3' not in name:
-        freeze.append(f"22.{name}")
+        freeze.append(f"{head_index}.{name}")
 
-freeze.extend(["22.cv3.0.0", "22.cv3.0.1", "22.cv3.1.0", "22.cv3.1.1", "22.cv3.2.0", "22.cv3.2.1"])
+freeze.extend([f"{head_index}.cv3.0.0", f"{head_index}.cv3.0.1", f"{head_index}.cv3.1.0", f"{head_index}.cv3.1.1", f"{head_index}.cv3.2.0", f"{head_index}.cv3.2.1"])
         
 model.train(data=data, batch=128, epochs=1, **extends, close_mosaic=1, \
     optimizer='AdamW', lr0=2e-3, warmup_bias_lr=0.0, \

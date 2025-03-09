@@ -28,7 +28,7 @@ tpe = model.get_text_pe(names)
 pe_path = "coco-pe.pt"
 torch.save({"names": names, "pe": tpe}, pe_path)
        
-model.train(data=data, epochs=160, close_mosaic=10, batch=128, 
+model.train(data=data, epochs=80, close_mosaic=10, batch=128, 
             optimizer='AdamW', lr0=1e-3, warmup_bias_lr=0.0, \
             weight_decay=0.025, momentum=0.9, workers=4, \
             device="0,1,2,3,4,5,6,7", **extends, \
