@@ -104,6 +104,7 @@ pip install -r requirements.txt
 pip install -e .
 pip install -e lvis-api
 pip install -e ml-mobileclip
+pip install -e CLIP
 ```
 
 ## Demo
@@ -175,6 +176,11 @@ The training includes three stages:
 For annotations, you can directly use our preprocessed ones or use the following script to obtain the processed annotations with segmentation masks.
 ```bash
 # Generate segmentation data
+conda create -n sam2 python==3.10.16
+conda activate sam2
+pip install -r sam2/requirements.txt
+pip install -e sam2/
+
 python tools/generate_sam_masks.py --img-path ../datasets/Objects365v1/images/train --json-path ../datasets/Objects365v1/annotations/objects365_train.json --batch
 python tools/generate_sam_masks.py --img-path ../datasets/flickr/full_images/ --json-path ../datasets/flickr/annotations/final_flickr_separateGT_train.json
 python tools/generate_sam_masks.py --img-path ../datasets/mixed_grounding/gqa/images --json-path ../datasets/mixed_grounding/annotations/final_mixed_train_no_coco.json
@@ -192,6 +198,10 @@ python tools/generate_grounding_cache.py --img-path ../datasets/mixed_grounding/
 # Generate train label embeddings
 python tools/generate_label_embedding.py
 python tools/generate_global_neg_cat.py
+```
+At last, please download MobileCLIP-B(LT) for text encoder.
+```bash
+wget https://docs-assets.developer.apple.com/ml-research/datasets/mobileclip/mobileclip_blt.pt
 ```
 
 ### Text prompt
@@ -232,7 +242,7 @@ python export.py
 
 ## Acknowledgement
 
-The code base is built with [ultralytics](https://github.com/ultralytics/ultralytics), [YOLO-World](), and [GenerateU]().
+The code base is built with [ultralytics](https://github.com/ultralytics/ultralytics), [YOLO-World](), [MobileCLIP](), [lvis-api](), [CLIP](), and [GenerateU]().
 
 Thanks for the great implementations! 
 
