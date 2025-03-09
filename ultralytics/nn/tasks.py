@@ -62,7 +62,7 @@ from ultralytics.nn.modules import (
     YOLOEDetect,
     YOLOESegment,
     v10Detect,
-    VocabHead,
+    LRPCHead,
     MaxSigmoidAttnBlock,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
@@ -658,7 +658,7 @@ class YOLOEModel(DetectionModel):
         device = next(self.parameters()).device
         self(torch.empty(1, 3, self.args["imgsz"], self.args["imgsz"]).to(device))  # warmup
         
-        self.model[-1].vh = nn.ModuleList(VocabHead(cls, pf[-1], loc[-1], enabled=i!=2) for i, (cls, pf, loc) in enumerate(zip(vocab, head.cv3, head.cv2)))
+        self.model[-1].lrpc = nn.ModuleList(LRPCHead(cls, pf[-1], loc[-1], enabled=i!=2) for i, (cls, pf, loc) in enumerate(zip(vocab, head.cv3, head.cv2)))
         for loc_head, cls_head in zip(head.cv2, head.cv3):
             assert(isinstance(loc_head, nn.Sequential))
             assert(isinstance(cls_head, nn.Sequential))
@@ -928,7 +928,8 @@ def torch_safe_load(weight, safe_only=False):
                 "ultralytics.nn.modules.head.VLDetect": "ultralytics.nn.modules.head.YOLOEDetect",
                 "ultralytics.nn.modules.head.VLSegment": "ultralytics.nn.modules.head.YOLOESegment",
                 "ultralytics.nn.tasks.WorldSegModel": "ultralytics.nn.tasks.YOLOESegModel",
-                "ultralytics.nn.tasks.WorldModel": "ultralytics.nn.tasks.YOLOEModel"
+                "ultralytics.nn.tasks.WorldModel": "ultralytics.nn.tasks.YOLOEModel",
+                "ultralytics.nn.modules.head.VisualPromptEncoder": "ultralytics.nn.modules.head.SAVPE"
             },
         ):
             if safe_only:

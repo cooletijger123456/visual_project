@@ -301,7 +301,7 @@ class Classify(nn.Module):
         x = self.linear(self.drop(self.pool(self.conv(x)).flatten(1)))
         return x
 
-class VisualPromptEncoder(nn.Module):
+class SAVPE(nn.Module):
     def __init__(self, ch, c3, embed):
         super().__init__()
         self.cv1 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3)) for x in ch)
@@ -325,12 +325,11 @@ class VisualPromptEncoder(nn.Module):
         x = [self.cv1[i](xi) for i, xi in enumerate(x)]
         x = self.cv3(torch.cat(x, dim=1))
         
-        B, C, H, W = x.shape  # batch size
+        B, C, H, W = x.shape 
 
         Q = vp.shape[1]
         
-        # Flatten features and scores to make it easier to work with
-        x = x.view(B, C, -1)  # B * C * (H*W + H/2*W/2 + H/4*W/4)
+        x = x.view(B, C, -1)
 
         y = y.reshape(B, 1, self.c, H, W).expand(-1, Q, -1, -1, -1).reshape(B * Q, self.c, H, W)
         vp = vp.reshape(B, Q, 1, H, W).reshape(B * Q, 1, H, W)
@@ -340,18 +339,16 @@ class VisualPromptEncoder(nn.Module):
         y = y.reshape(B, Q, self.c, -1)
         vp = vp.reshape(B, Q, 1, -1)
 
-        # Compute the softmax scores over all feature map elements for each mask
-        score = y * vp + torch.logical_not(vp) * torch.finfo(y.dtype).min  # B * Q * (H*W + H/2*W/2 + H/4*W/4)
+        score = y * vp + torch.logical_not(vp) * torch.finfo(y.dtype).min
  
         score = F.softmax(score, dim=-1, dtype=torch.float).to(score.dtype)
 
-        # Use the softmax scores to aggregate features from all feature maps
         aggregated = score.transpose(-2, -3) @ x.reshape(B, self.c, C // self.c, -1).transpose(-1, -2)
         
         return F.normalize(aggregated.transpose(-2, -3).reshape(B, Q, -1), dim=-1, p=2)
 
 
-class VocabHead(nn.Module):
+class LRPCHead(nn.Module):
     def __init__(self, vocab, pf, loc, enabled=True):
         super().__init__()
         if enabled:
@@ -407,8 +404,8 @@ class YOLOEDetect(Detect):
         
         self.cv4 = nn.ModuleList(BNContrastiveHead(embed) if with_bn else ContrastiveHead() for _ in ch)
         
-        self.gc = Residual(SwiGLUFFN(embed, embed))
-        self.vpe = VisualPromptEncoder(ch, c3, embed)
+        self.reprta = Residual(SwiGLUFFN(embed, embed))
+        self.savpe = SAVPE(ch, c3, embed)
         self.embed = embed
     
     @smart_inference_mode()
@@ -449,40 +446,40 @@ class YOLOEDetect(Detect):
             
             bn_head.fuse()
         
-        del self.gc
-        self.gc = nn.Identity()
+        del self.reprta
+        self.reprta = nn.Identity()
         self.is_fused = True
     
     def get_tpe(self, tpe):
         if tpe is None:
             return None
-        return F.normalize(self.gc(tpe), dim=-1, p=2)
+        return F.normalize(self.reprta(tpe), dim=-1, p=2)
     
     def get_vpe(self, x, vpe):
         if vpe.ndim == 4:
-            vpe = self.vpe(x, vpe)
+            vpe = self.savpe(x, vpe)
         assert(vpe.ndim == 3)
         return vpe
     
     def forward(self, x, cls_pe):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
-        has_vh = hasattr(self, "vh")
-        masks = [] if has_vh else None
+        has_lrpc = hasattr(self, "lrpc")
+        masks = [] if has_lrpc else None
         for i in range(self.nl):
-            if not has_vh:
+            if not has_lrpc:
                 x[i] = torch.cat((self.cv2[i](x[i]), self.cv4[i](self.cv3[i](x[i]), cls_pe)), 1)
             else:
                 assert(self.is_fused)
                 cls_feat = self.cv3[i](x[i])
                 loc_feat = self.cv2[i](x[i])
-                assert(isinstance(self.vh[i], VocabHead))
-                x[i], mask = self.vh[i](cls_feat, loc_feat, self.conf, self.max_det)
+                assert(isinstance(self.lrpc[i], LRPCHead))
+                x[i], mask = self.lrpc[i](cls_feat, loc_feat, self.conf, self.max_det)
                 masks.append(mask)
         if self.training:
             return x
 
         # Inference path
-        if not has_vh:
+        if not has_lrpc:
             shape = x[0].shape  # BCHW
             x_cat = torch.cat([xi.view(shape[0], self.nc + self.reg_max * 4, -1) for xi in x], 2)
             if (self.dynamic or self.shape != shape):
@@ -510,7 +507,7 @@ class YOLOEDetect(Detect):
         else:
             dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
 
-        if has_vh:
+        if has_lrpc:
             mask = torch.cat(masks)
             dbox = dbox[:, :, mask]
         y = torch.cat((dbox, cls.sigmoid()), 1)
