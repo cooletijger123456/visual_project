@@ -350,7 +350,40 @@ class VisualPromptEncoder(nn.Module):
         
         return F.normalize(aggregated.transpose(-2, -3).reshape(B, Q, -1), dim=-1, p=2)
 
+
+class VocabHead(nn.Module):
+    def __init__(self, vocab, pf, loc, enabled=True):
+        super().__init__()
+        if enabled:
+            self.vocab = self.conv2linear(vocab)
+        else:
+            self.vocab = vocab
+        self.pf = pf
+        self.loc = loc
+        self.enabled = enabled
+    
+    def conv2linear(self, conv):
+        assert isinstance(conv, nn.Conv2d) and conv.kernel_size == (1, 1)
+        linear = nn.Linear(conv.in_channels, conv.out_channels)
+        linear.weight.data = conv.weight.view(conv.out_channels, -1).data
+        linear.bias.data = conv.bias.data
+        return linear
+    
+    def forward(self, cls_feat, loc_feat, conf, max_det):
+        if self.enabled:
+            pf_score = self.pf(cls_feat)[0, 0].flatten(0)
+            mask = pf_score.sigmoid() > conf
+            
+            cls_feat = self.vocab(cls_feat.flatten(2).transpose(-1, -2)[:, mask])
+            return (self.loc(loc_feat), cls_feat.transpose(-1, -2)), mask
+        else:
+            cls_feat = self.vocab(cls_feat)
+            loc_feat = self.loc(loc_feat)
+            return (loc_feat, cls_feat.flatten(2)), torch.ones(cls_feat.shape[2] * cls_feat.shape[3], device=cls_feat.device, dtype=torch.bool)
+
 class WorldDetect(Detect):
+    is_fused = False
+    
     """Head for integrating YOLO detection models with semantic understanding from text embeddings."""
 
     def __init__(self, nc=80, embed=512, with_bn=False, ch=()):
@@ -380,6 +413,9 @@ class WorldDetect(Detect):
     
     @smart_inference_mode()
     def fuse(self, txt_feats):
+        if self.is_fused:
+            return
+        
         assert(not self.training)
         txt_feats = txt_feats.to(torch.float32).squeeze(0)
         for cls_head, bn_head in zip(self.cv3, self.cv4):
@@ -415,6 +451,7 @@ class WorldDetect(Detect):
         
         del self.gc
         self.gc = nn.Identity()
+        self.is_fused = True
     
     def get_tpe(self, tpe):
         if tpe is None:
@@ -429,23 +466,38 @@ class WorldDetect(Detect):
     
     def forward(self, x, cls_pe):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
+        has_vh = hasattr(self, "vh")
+        masks = [] if has_vh else None
         for i in range(self.nl):
-            x[i] = torch.cat((self.cv2[i](x[i]), self.cv4[i](self.cv3[i](x[i]), cls_pe)), 1)
+            if not has_vh:
+                x[i] = torch.cat((self.cv2[i](x[i]), self.cv4[i](self.cv3[i](x[i]), cls_pe)), 1)
+            else:
+                assert(self.is_fused)
+                cls_feat = self.cv3[i](x[i])
+                loc_feat = self.cv2[i](x[i])
+                assert(isinstance(self.vh[i], VocabHead))
+                x[i], mask = self.vh[i](cls_feat, loc_feat, self.conf, self.max_det)
+                masks.append(mask)
         if self.training:
             return x
 
         # Inference path
-        shape = x[0].shape  # BCHW
-        x_cat = torch.cat([xi.view(shape[0], self.nc + self.reg_max * 4, -1) for xi in x], 2)
-        if self.dynamic or self.shape != shape:
-            self.anchors, self.strides = (x.transpose(0, 1) for x in make_anchors(x, self.stride, 0.5))
-            self.shape = shape
+        if not has_vh:
+            shape = x[0].shape  # BCHW
+            x_cat = torch.cat([xi.view(shape[0], self.nc + self.reg_max * 4, -1) for xi in x], 2)
+            if (self.dynamic or self.shape != shape):
+                self.anchors, self.strides = (x.transpose(0, 1) for x in make_anchors(x, self.stride, 0.5))
+                self.shape = shape
 
-        if self.export and self.format in {"saved_model", "pb", "tflite", "edgetpu", "tfjs"}:  # avoid TF FlexSplitV ops
-            box = x_cat[:, : self.reg_max * 4]
-            cls = x_cat[:, self.reg_max * 4 :]
+            if self.export and self.format in {"saved_model", "pb", "tflite", "edgetpu", "tfjs"}:  # avoid TF FlexSplitV ops
+                box = x_cat[:, : self.reg_max * 4]
+                cls = x_cat[:, self.reg_max * 4 :]
+            else:
+                box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
         else:
-            box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
+            shape = x[0][0].shape
+            box = torch.cat([xi[0].view(shape[0], self.reg_max * 4, -1) for xi in x], 2)
+            cls = torch.cat([xi[1] for xi in x], 2)
 
         if self.export and self.format in {"tflite", "edgetpu"}:
             # Precompute normalization factor to increase numerical stability
@@ -458,6 +510,9 @@ class WorldDetect(Detect):
         else:
             dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
 
+        if has_vh:
+            mask = torch.cat(masks)
+            dbox = dbox[:, :, mask]
         y = torch.cat((dbox, cls.sigmoid()), 1)
         return y if self.export else (y, x)
 

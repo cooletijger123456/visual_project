@@ -105,6 +105,14 @@ class YOLOWorld(Model):
         assert(isinstance(self.model, WorldModel))
         return self.model.get_visual_pe(img, visual)
 
+    def set_vocab(self, vocab, names):
+        assert(isinstance(self.model, WorldModel))
+        self.model.set_vocab(vocab, names=names)
+    
+    def get_vocab(self, names):
+        assert(isinstance(self.model, WorldModel))
+        return self.model.get_vocab(names)
+
     def set_classes(self, classes, embeddings):
         """
         Set classes.
