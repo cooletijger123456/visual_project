@@ -2151,10 +2151,16 @@ class LoadVisualPrompt:
     def __call__(self, labels):
         imgsz = labels["img"].shape[1:]
         masksz = (int(imgsz[0] * self.scale_factor), int(imgsz[1] * self.scale_factor))
-        bboxes = labels["bboxes"]
-        bboxes = xywh2xyxy(bboxes) * torch.tensor(masksz)[[1, 0, 1, 0]]  # target boxes
-        masks = self.make_mask(bboxes, *masksz).float()
-        
+        if "bboxes" in labels:
+            bboxes = labels["bboxes"]
+            bboxes = xywh2xyxy(bboxes) * torch.tensor(masksz)[[1, 0, 1, 0]]  # target boxes
+            masks = self.make_mask(bboxes, *masksz).float()
+        elif "masks" in labels:
+            masks = F.interpolate(torch.from_numpy(labels["masks"]).unsqueeze(1), 
+                                  masksz, mode="nearest").squeeze(1).float()
+        else:
+            raise ValueError("LoadVisualPrompt must have bboxes or masks in the label")
+
         cls = labels["cls"].squeeze(-1).to(torch.int)
         cls_unique, inverse_indices = torch.unique(cls, sorted=True, return_inverse=True)
         if len(cls_unique) != 0 and self.augment:

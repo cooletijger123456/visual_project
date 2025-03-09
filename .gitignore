@@ -172,3 +172,4 @@ calibration_*.npy
 
 ignore
 exports
+pretrain

@@ -1,12 +1,14 @@
 from ultralytics.models.yolo.detect import DetectionPredictor
+from ultralytics.models.yolo.segment import SegmentationPredictor
 from ultralytics.data.augment import LetterBox, LoadVisualPrompt
 from ultralytics.utils.instance import Instances
 import numpy as np
 import torch
 
 from ultralytics.utils.torch_utils import select_device
+from ultralytics.utils.ops import draw_circles_on_mask
 
-class YOLOEVPPredictor(DetectionPredictor):
+class YOLOEVPPredictorMixin:
     def setup_model(self, model, verbose=True):
         """Initialize YOLO model with given parameters and set it to evaluation mode."""
         device = select_device(self.args.device, verbose=verbose)
@@ -31,22 +33,43 @@ class YOLOEVPPredictor(DetectionPredictor):
         )
         assert(len(im) == 1)
         
-        labels = dict(
-            img=im[0],
-            instances=Instances(bboxes=self.prompts["bboxes"], 
-                                segments=np.zeros((0, 1000, 2), dtype=np.float32), 
-                                bbox_format="xyxy", normalized=False),
-            cls=torch.zeros((len(self.prompts["bboxes"]), 1))
-        )
-        
-        labels = letterbox(labels)
-        
-        instances = labels.pop("instances")
-        h, w = labels["img"].shape[:2]
-        instances.normalize(w, h)
-        instances.convert_bbox(format="xywh")
-        labels["bboxes"] = torch.from_numpy(instances.bboxes)
-        
+        if "bboxes" in self.prompts and len(self.prompts["bboxes"]) > 0:
+            labels = dict(
+                img=im[0],
+                instances=Instances(bboxes=self.prompts["bboxes"], 
+                                    segments=np.zeros((0, 1000, 2), dtype=np.float32), 
+                                    bbox_format="xyxy", normalized=False),
+                cls=torch.zeros((len(self.prompts["bboxes"]), 1))
+            )
+            
+            labels = letterbox(labels)
+            
+            instances = labels.pop("instances")
+            h, w = labels["img"].shape[:2]
+            instances.normalize(w, h)
+            instances.convert_bbox(format="xywh")
+            labels["bboxes"] = torch.from_numpy(instances.bboxes)
+        else:
+            if "points" in self.prompts:
+                points = self.prompts["points"]
+                masks = np.zeros((len(points), *im[0].shape[:2]))
+                masks = draw_circles_on_mask(masks, points, radius=50)
+            else:
+                masks = self.prompts["masks"]
+
+            img = letterbox(image=im[0])
+            resized_masks = []
+            for i in range(len(masks)):
+                resized_masks.append(letterbox(image=masks[i]))
+            masks = np.stack(resized_masks)
+            masks[masks == 114] = 0
+
+            labels = dict(
+                img=img,
+                masks=masks,
+                cls=torch.zeros((len(masks), 1))
+            )
+
         labels["img"] = labels["img"].transpose(2, 0, 1)
         
         load_vp = LoadVisualPrompt(nc=1, augment=False)
@@ -58,4 +81,12 @@ class YOLOEVPPredictor(DetectionPredictor):
         return [labels["img"].transpose(1, 2, 0)]
 
     def inference(self, im, *args, **kwargs):
+        self.vpe = self.model.get_visual_pe(im, visual=self.prompts)
         return super().inference(im, vpe=self.prompts, *args, **kwargs)
+
+
+class YOLOEVPDetectPredictor(YOLOEVPPredictorMixin, DetectionPredictor):
+    pass
+
+class YOLOEVPSegPredictor(YOLOEVPPredictorMixin, SegmentationPredictor):
+    pass

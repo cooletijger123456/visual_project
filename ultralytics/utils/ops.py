@@ -837,3 +837,10 @@ def clean_str(s):
         (str): a string with special characters replaced by an underscore _
     """
     return re.sub(pattern="[|@#!¡·$€%&()=?¿^*;:,¨´><+]", repl="_", string=s)
+
+
+def draw_circles_on_mask(masks, centers, radius, value=1):
+    for i, center in enumerate(centers):
+        center = (int(center[0]), int(center[1]))
+        masks[i] = cv2.circle(masks[i], center, radius, color=value, thickness=-1)
+    return masks
