@@ -70,6 +70,7 @@ Object detection and segmentation are widely employed in computer vision applica
 
 - The model is the same as above in [Zero-shot detection evaluation](#zero-shot-detection-evaluation) except the specialized prompt embedding.
 - *Fixed AP* is reported on LVIS `minival` set and FPS is measured on Nvidia T4 GPU with Pytorch.
+- For clearer visualization, segmentation head is currently disabled and it can be added from models in [Zero-shot detection evaluation](#zero-shot-detection-evaluation).
 
 | Model | Size | Params | $AP$ | $AP_r$ | $AP_c$ | $AP_f$ | FPS | Log |
 |---|---|---|---|---|---|---|---|---|
