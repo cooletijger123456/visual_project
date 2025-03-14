@@ -2,18 +2,13 @@
 
 from pathlib import Path
 
-from huggingface_hub import PyTorchModelHubMixin
-
 from ultralytics.engine.model import Model
 from ultralytics.models import yolo
 from ultralytics.nn.tasks import ClassificationModel, DetectionModel, OBBModel, PoseModel, SegmentationModel, YOLOEModel, YOLOESegModel
 from ultralytics.utils import ROOT, yaml_load
 
 
-class YOLO(Model, PyTorchModelHubMixin,
-           repo_url="https://github.com/THU-MIG/yoloe",
-           pipeline_tag="zero-shot-object-detection",
-           license="agpl-3.0"):
+class YOLO(Model):
     """YOLO (You Only Look Once) object detection model."""
 
     def __init__(self, model="yolo11n.pt", task=None, verbose=False):
