@@ -9,24 +9,22 @@ import torch
 import supervision as sv
 import os
 
-# Load model
-model = YOLOE("pretrain/yoloe-v8l-seg.pt")
-model.eval()
-model.to("cuda" if torch.cuda.is_available() else "cpu")
+# Global model path tracking
+selected_weights = "pretrain/yoloe-v8l-seg.pt"
 
-# Load model wrapper for clean reinitialization
-def load_model():
-    model = YOLOE("pretrain/yoloe-v8l-seg.pt")
+def load_model(weights_path="pretrain/yoloe-v8l-seg.pt"):
+    model = YOLOE(weights_path)
     model.eval()
     model.to("cuda" if torch.cuda.is_available() else "cpu")
     return model
 
-model = load_model()
+model = load_model(selected_weights)
 
-def reset_model_predictor(debug_tag=""):
+def reset_model_predictor(debug_tag="", weights_path=None):
     global model
-    print(f"[{debug_tag}] Reinitializing model...")
-    model = load_model()
+    print(f"[{debug_tag}] Reinitializing model with weights: {weights_path}")
+    model = load_model(weights_path or selected_weights)
+
     try:
         if hasattr(model, "predictor") and model.predictor is not None:
             if hasattr(model.predictor, "vpe"):
@@ -46,7 +44,6 @@ def reset_model_predictor(debug_tag=""):
         else:
             print(f"[{debug_tag}] model._classes not set, skipping.")
 
-        # Try removing low-level VPE embedding if it exists
         if hasattr(model.model, 'model') and hasattr(model.model.model, 'vpe'):
             print(f"[{debug_tag}] Deleting model.model.model.vpe")
             del model.model.model.vpe
@@ -58,11 +55,9 @@ def reset_model_predictor(debug_tag=""):
         import traceback
         traceback.print_exc()
 
-# rest of the code remains unchanged
-
 @smart_inference_mode()
 def run_prediction(*inputs):
-    reset_model_predictor("run_prediction:init")
+    reset_model_predictor("run_prediction:init", weights_path=selected_weights)
 
     results = []
     bboxes_list = []
@@ -150,35 +145,18 @@ def run_prediction(*inputs):
 
 @smart_inference_mode()
 def predict_with_accumulated_vpe(target_image, visuals_code, source_images_data):
-    reset_model_predictor("vpe:before_exec")
-
+    reset_model_predictor("vpe:before_exec", weights_path=selected_weights)
     try:
         local_vars = {}
         exec(visuals_code, {}, local_vars)
-
         visuals = local_vars.get("visuals", {})
-        source_image_keys = sorted([k for k in local_vars if k.startswith("source_image")])
-
-        image_inputs = []
-        for i, key in enumerate(source_image_keys):
-            if i < len(source_images_data):
-                image = source_images_data[i]
-                if image is not None:
-                    image_inputs.append(image)
-
+        image_inputs = [img for img in source_images_data if img is not None]
         if not image_inputs:
             raise ValueError("No valid source images in memory.")
 
-        _ = model.predict(
-            source=image_inputs,
-            prompts=visuals,
-            predictor=YOLOEVPSegPredictor,
-            return_vpe=True,
-            conf=0.1
-        )
+        _ = model.predict(source=image_inputs, prompts=visuals, predictor=YOLOEVPSegPredictor, return_vpe=True, conf=0.1)
 
         if hasattr(model.predictor, "vpe") and model.predictor.vpe is not None:
-            print(f"[vpe:accum] VPE shape: {model.predictor.vpe.shape}")
             mean_vpe = torch.nn.functional.normalize(model.predictor.vpe.mean(dim=0, keepdim=True), dim=-1, p=2)
             model.set_classes(["object" + str(i) for i in range(mean_vpe.shape[0])], mean_vpe)
         else:
@@ -197,7 +175,6 @@ def predict_with_accumulated_vpe(target_image, visuals_code, source_images_data)
                 f"{class_name} {conf:.2f}"
                 for class_name, conf in zip(detections['class_name'], detections.confidence)
             ]
-
             annotated = sv.MaskAnnotator(color_lookup=sv.ColorLookup.INDEX, opacity=0.4).annotate(annotated, detections)
             annotated = sv.BoxAnnotator(color_lookup=sv.ColorLookup.INDEX, thickness=thickness).annotate(annotated, detections)
             annotated = sv.LabelAnnotator(color_lookup=sv.ColorLookup.INDEX, text_scale=text_scale).annotate(annotated, detections, labels)
@@ -216,11 +193,108 @@ def predict_with_accumulated_vpe(target_image, visuals_code, source_images_data)
         return fallback
 
     finally:
-        reset_model_predictor("vpe:finally")
+        reset_model_predictor("vpe:finally", weights_path=selected_weights)
 
-# Gradio Interface
+from pathlib import Path
+@smart_inference_mode()
+def batch_predict_from_folder(folder_path, output_folder,
+                              visuals_code, source_images_data):
+    """
+    Build a VPE from the reference images and then run YOLO-E VP
+    segmentation on every image found in `folder_path`, saving each
+    annotated image into `output_folder`.
+    """
+    reset_model_predictor("vpe:batch_folder_start", weights_path=selected_weights)
+
+    try:
+        # ---------------------------------------------------------------
+        # 1. Recreate the 'visuals' dict that holds the prompt boxes
+        # ---------------------------------------------------------------
+        ns = {}
+        exec(visuals_code, {}, ns)
+        visuals = ns.get("visuals", {})
+        ref_images = [img for img in source_images_data if img is not None]
+        if not ref_images:
+            raise ValueError("No reference images available to build VPE.")
+
+        # ---------------------------------------------------------------
+        # 2. Build VPE on the reference images
+        # ---------------------------------------------------------------
+        model.predict(
+            source=ref_images,
+            prompts=visuals,
+            predictor=YOLOEVPSegPredictor,
+            return_vpe=True,
+            conf=0.10
+        )
+
+        if getattr(model.predictor, "vpe", None) is None:
+            raise RuntimeError("VPE was not generated.")
+
+        mean_vpe = torch.nn.functional.normalize(
+            model.predictor.vpe.mean(dim=0, keepdim=True), p=2, dim=-1
+        )
+        model.set_classes([f"object{i}" for i in range(mean_vpe.shape[0])],
+                          mean_vpe)
+
+        # ---------------------------------------------------------------
+        # 3. Fresh predictor before inference phase
+        # ---------------------------------------------------------------
+        model.predictor = None
+
+        # ---------------------------------------------------------------
+        # 4. Iterate over every image in the folder — one predict at a time
+        # ---------------------------------------------------------------
+        # ---------------------------------------------------------------
+# 4. Iterate over every image in the folder — one predict at a time
+#     (identical call signature to predict_with_accumulated_vpe)
+# ---------------------------------------------------------------
+        img_paths = [
+            str(Path(folder_path) / f)
+            for f in sorted(os.listdir(folder_path))
+            if f.lower().endswith((".jpg", ".jpeg", ".png"))
+        ]
+        if not img_paths:
+            return "No JPG / PNG files found in the input folder."
+
+        os.makedirs(output_folder, exist_ok=True)
+
+        for path in img_paths:
+            model.predict(                  # ← SAME API call as the single-image path
+                source=path,
+                conf=0.25,
+                save=True,
+                project=output_folder,      # files land directly here
+                name="",                    # no extra “predict/” sub-folder
+                exist_ok=True,
+                stream=False
+            )
+            print(f"Saved: {os.path.basename(path)}")
+
+
+        return (f"Processed {len(img_paths)} images. "
+                f"Annotated files are in '{output_folder}'.")
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return f"Error: {e}"
+    finally:
+        reset_model_predictor("vpe:batch_folder_final", weights_path=selected_weights)
+
+
 with gr.Blocks() as demo:
     gr.Markdown("## YOLOE Visual Prompt – Side-by-Side Viewer")
+
+    with gr.Row():
+        gr.Markdown("### Select Model Weights")
+        weight_options = sorted([f"pretrain/{f}" for f in os.listdir("pretrain") if f.endswith(".pt")])
+        weights_dropdown = gr.Dropdown(choices=weight_options, value=selected_weights, label="YOLOE Weights")
+
+    def update_weights(new_weights):
+        global selected_weights
+        selected_weights = new_weights
+        reset_model_predictor("weights_dropdown_changed", weights_path=selected_weights)
+
+    weights_dropdown.change(fn=update_weights, inputs=weights_dropdown, outputs=[])
 
     MAX_INPUTS = 5
     index = gr.State(value=1)
@@ -247,10 +321,8 @@ with gr.Blocks() as demo:
 
     visuals_output = gr.Code(label="Collected Visual Prompt Info", language="python")
 
-    add_btn.click(fn=lambda idx: [gr.update(visible=(i < idx + 1)) for i in range(MAX_INPUTS)] + [min(idx + 1, MAX_INPUTS)],
-                  inputs=index, outputs=visibility_controls + [index])
-    remove_btn.click(fn=lambda idx: [gr.update(visible=(i < idx - 1)) for i in range(MAX_INPUTS)] + [max(idx - 1, 1)],
-                     inputs=index, outputs=visibility_controls + [index])
+    add_btn.click(fn=lambda idx: [gr.update(visible=(i < idx + 1)) for i in range(MAX_INPUTS)] + [min(idx + 1, MAX_INPUTS)], inputs=index, outputs=visibility_controls + [index])
+    remove_btn.click(fn=lambda idx: [gr.update(visible=(i < idx - 1)) for i in range(MAX_INPUTS)] + [max(idx - 1, 1)], inputs=index, outputs=visibility_controls + [index])
     run_btn.click(fn=run_prediction, inputs=input_prompters, outputs=output_images + [visuals_output, source_image_data_state])
 
     gr.Markdown("### Predict on a New Image Using Accumulated Prompts")
@@ -258,11 +330,15 @@ with gr.Blocks() as demo:
         target_image_input = gr.Image(label="Target Image", type="pil")
         predict_vpe_btn = gr.Button("Predict with Accumulated Visual Prompts")
     target_output_image = gr.Image(label="Target Prediction", type="pil")
+    predict_vpe_btn.click(fn=predict_with_accumulated_vpe, inputs=[target_image_input, visuals_output, source_image_data_state], outputs=target_output_image)
 
-    predict_vpe_btn.click(
-        fn=predict_with_accumulated_vpe,
-        inputs=[target_image_input, visuals_output, source_image_data_state],
-        outputs=target_output_image
-    )
+    gr.Markdown("### Batch Predict on Folder Using Visual Prompts")
+    with gr.Row():
+        folder_input = gr.Textbox(label="Folder Path", placeholder="e.g., /path/to/image/folder")
+        output_folder_input = gr.Textbox(label="Output Folder", placeholder="e.g., /path/to/save/results")
+        run_batch_btn = gr.Button("Run Batch Prediction")
+    batch_result_text = gr.Textbox(label="Batch Prediction Result")
+    run_batch_btn.click(fn=batch_predict_from_folder, inputs=[folder_input, output_folder_input, visuals_output, source_image_data_state], outputs=batch_result_text)
 
+# Launch app
 demo.launch()
