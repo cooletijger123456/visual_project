@@ -10,7 +10,8 @@ from pathlib import Path
 
 # ───────────────────────── GLOBALS ─────────────────────────
 selected_weights = "pretrain/yoloe-v8l-seg.pt"
-conf_threshold   = 0.25                    # slider default
+conf_threshold   = 0.25    # default confidence
+iou_threshold    = 0.70    # default IoU 
 
 # ─────────────────── MODEL HELPERS ─────────────────────────
 def load_model(weights_path=selected_weights):
@@ -21,7 +22,7 @@ def load_model(weights_path=selected_weights):
 model = load_model(selected_weights)
 
 def reset_model_predictor(tag="", weights_path=None):
-    """Reload model and clear predictor / VPE buffers."""
+    """Reload model and clear predictor/VPE buffers."""
     global model
     print(f"[{tag}] reset — weights = {weights_path or selected_weights}")
     model = load_model(weights_path or selected_weights)
@@ -32,10 +33,10 @@ def reset_model_predictor(tag="", weights_path=None):
         if hasattr(model, "_classes"): del model._classes
         if hasattr(model.model, "model") and hasattr(model.model.model, "vpe"):
             del model.model.model.vpe
-    except Exception:
+    except Exception:  # pragma: no cover
         import traceback; traceback.print_exc()
 
-# ───────────────── SINGLE-IMAGE INFERENCE ──────────────────
+# ───────────────── SINGLE-IMAGE INFERENCE ─────────────────
 @smart_inference_mode()
 def run_prediction(*inputs):
     reset_model_predictor("single_predict", selected_weights)
@@ -63,9 +64,13 @@ def run_prediction(*inputs):
         cls_list.append(np.zeros(len(boxes), int))
         prompts = {"bboxes": boxes, "cls": np.zeros(len(boxes), int)}
 
-        preds = model.predict(img, prompts=prompts,
-                              predictor=YOLOEVPSegPredictor,
-                              conf=conf_threshold)
+        preds = model.predict(
+            img,
+            prompts=prompts,
+            predictor=YOLOEVPSegPredictor,
+            conf=conf_threshold,
+            iou=iou_threshold                           # ← NEW
+        )
 
         det = sv.Detections.from_ultralytics(preds[0])
         annotated = img.copy()
@@ -84,8 +89,8 @@ def run_prediction(*inputs):
             ImageDraw.Draw(annotated).text((10, 10), "No detections", fill="red")
         results.append(annotated)
 
-    # build visuals_code
-    vcode = "import numpy as np\n\nvisuals = dict(\n    bboxes=[\n"
+    # build visuals_code for VPE
+    vcode  = "import numpy as np\n\nvisuals = dict(\n    bboxes=[\n"
     for b in bboxes_list:
         vcode += f"        np.array({repr(b.tolist())}),\n" if b is not None else "        None,\n"
     vcode += "    ],\n    cls=[\n"
@@ -97,7 +102,7 @@ def run_prediction(*inputs):
 
     return results + [vcode, source_imgs]
 
-# ─────────────── ACCUMULATED-VPE INFERENCE ────────────────
+# ─────────────── ACCUMULATED-VPE INFERENCE ───────────────
 @smart_inference_mode()
 def predict_with_accumulated_vpe(target_img, visuals_code, source_imgs):
     reset_model_predictor("accum_vpe", selected_weights)
@@ -107,15 +112,21 @@ def predict_with_accumulated_vpe(target_img, visuals_code, source_imgs):
         refs = [im for im in source_imgs if im is not None]
         if not refs: raise ValueError("No reference images")
 
-        model.predict(refs, prompts=visuals,
-                      predictor=YOLOEVPSegPredictor,
-                      return_vpe=True, conf=0.10)
-        mean_vpe = torch.nn.functional.normalize(
-            model.predictor.vpe.mean(0, keepdim=True), p=2, dim=-1)
+        # build VPE
+        model.predict(
+            refs,
+            prompts=visuals,
+            predictor=YOLOEVPSegPredictor,
+            return_vpe=True,
+            conf=0.10,
+            iou=iou_threshold                          # ← NEW
+        )
+        mean_vpe = torch.nn.functional.normalize(model.predictor.vpe.mean(0, keepdim=True),
+                                                 p=2, dim=-1)
         model.set_classes([f"object{i}" for i in range(mean_vpe.shape[0])], mean_vpe)
         model.predictor = None
 
-        res = model.predict(target_img, conf=conf_threshold)[0]
+        res = model.predict(target_img, conf=conf_threshold, iou=iou_threshold)[0]  # ← NEW
         det = sv.Detections.from_ultralytics(res)
         out = target_img.copy()
         if len(det):
@@ -132,14 +143,10 @@ def predict_with_accumulated_vpe(target_img, visuals_code, source_imgs):
         else:
             ImageDraw.Draw(out).text((10, 10), "No detections", fill="red")
         return out
-    except Exception:
-        import traceback; traceback.print_exc()
-        fb = Image.new("RGB", target_img.size, "red")
-        ImageDraw.Draw(fb).text((10, 10), "Error", fill="white"); return fb
     finally:
         reset_model_predictor("accum_vpe:end", selected_weights)
 
-# ─────────────────────── BATCH PREDICT (unchanged) ─────────────────────
+# ─────────────────────── BATCH PREDICT ────────────────────
 @smart_inference_mode()
 def batch_predict_from_folder(folder_path, output_folder,
                               visuals_code, source_imgs):
@@ -152,9 +159,9 @@ def batch_predict_from_folder(folder_path, output_folder,
 
         model.predict(refs, prompts=visuals,
                       predictor=YOLOEVPSegPredictor,
-                      return_vpe=True, conf=0.10)
-        mean_vpe = torch.nn.functional.normalize(
-            model.predictor.vpe.mean(0, keepdim=True), p=2, dim=-1)
+                      return_vpe=True, conf=0.10, iou=iou_threshold)   # ← NEW
+        mean_vpe = torch.nn.functional.normalize(model.predictor.vpe.mean(0, keepdim=True),
+                                                 p=2, dim=-1)
         model.set_classes([f"object{i}" for i in range(mean_vpe.shape[0])], mean_vpe)
         model.predictor = None
 
@@ -164,13 +171,11 @@ def batch_predict_from_folder(folder_path, output_folder,
         os.makedirs(output_folder, exist_ok=True)
 
         for p in paths:
-            model.predict(p, conf=conf_threshold, save=True,
-                          project=output_folder, name="", exist_ok=True, stream=False)
+            model.predict(p, conf=conf_threshold, iou=iou_threshold,   # ← NEW
+                          save=True, project=output_folder,
+                          name="", exist_ok=True, stream=False)
             print("Saved:", Path(p).name)
         return f"Processed {len(paths)} images."
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return f"Error: {e}"
     finally:
         reset_model_predictor("batch:end", selected_weights)
 
@@ -178,7 +183,7 @@ def batch_predict_from_folder(folder_path, output_folder,
 with gr.Blocks() as demo:
     gr.Markdown("## YOLOE Visual Prompt – Side-by-Side Viewer")
 
-    # weight & confidence controls
+    # weight, confidence, IoU controls
     with gr.Row():
         weight_opts = sorted([f"pretrain/{f}" for f in os.listdir("pretrain")
                               if f.endswith(".pt")])
@@ -186,13 +191,18 @@ with gr.Blocks() as demo:
                                   label="YOLOE Weights")
         conf_slider = gr.Slider(0.05, 0.90, step=0.05, value=conf_threshold,
                                 label="Confidence Threshold")
+        iou_slider  = gr.Slider(0.10, 0.95, step=0.05, value=iou_threshold,     # ← NEW
+                                label="IoU Threshold")
 
+    # callbacks
     weights_dd.change(lambda w: (reset_model_predictor("weights_changed", w), None),
                       weights_dd, [])
     conf_slider.change(lambda c: (globals().__setitem__('conf_threshold', c),
                                   reset_model_predictor("conf_changed")), conf_slider, [])
+    iou_slider.change(lambda t: (globals().__setitem__('iou_threshold', t),            # ← NEW
+                                 reset_model_predictor("iou_changed")), iou_slider, [])
 
-    # reference prompt section
+    # reference-prompt inputs
     MAX_INPUTS, idx_state, src_imgs_state = 5, gr.State(1), gr.State()
     prompters, preds, rows = [], [], []
     for i in range(MAX_INPUTS):
@@ -204,11 +214,11 @@ with gr.Blocks() as demo:
                 preds.append(gr.Image(label=f"Prediction {i+1}", type="pil"))
             rows.append(r)
 
+    # add/remove rows
     toggle = lambda idx, add=True: [gr.update(visible=i < (min(MAX_INPUTS, idx+1)
                                     if add else max(1, idx-1)))
                                     for i in range(MAX_INPUTS)] + \
                                     [min(MAX_INPUTS, idx+1) if add else max(1, idx-1)]
-
     gr.Button("+ Add Image").click(toggle, idx_state, rows + [idx_state])
     gr.Button("- Remove Image").click(lambda i: toggle(i, False),
                                       idx_state, rows + [idx_state])
@@ -217,19 +227,18 @@ with gr.Blocks() as demo:
     gr.Button("Run Inference").click(run_prediction, prompters,
                                      preds + [vis_code, src_imgs_state])
 
-    # ────── tighter accumulated-prompt area ──────
+    # Accumulated-prompt UI
     gr.Markdown("### Predict on a New Image Using Accumulated Prompts")
     with gr.Row(equal_height=True):
         tgt_img = gr.Image(label="Target Image", type="pil")
         tgt_out = gr.Image(label="→ Prediction", type="pil")
-
     gr.Button("Run Inference").click(
         predict_with_accumulated_vpe,
         [tgt_img, vis_code, src_imgs_state],
         tgt_out
     )
 
-    # batch area
+    # batch UI
     gr.Markdown("### Batch Predict on Folder")
     inp_folder = gr.Textbox(label="Folder Path")
     out_folder = gr.Textbox(label="Output Folder")
