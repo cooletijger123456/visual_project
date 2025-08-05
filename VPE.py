@@ -214,3 +214,182 @@ print("IoU thresholds:", ", ".join(f"{t:.2f}" for t in torch.linspace(0.5, 0.95,
 print("AP per IoU:   ", ", ".join(f"{x:.4f}" for x in aps))
 print(f"mAP@0.50:     {mAP50:.4f}")
 print(f"mAP@0.50:0.95: {mAP50_95:.4f}")
+
+import os
+import re
+import json
+from PIL import Image, ImageDraw, ImageFont
+
+# --- Paths ---
+frames_dir = "/test_docker/yoloe-main/yoloe-main/data/dog17/frames_clean"
+groundtruth_path = "/test_docker/yoloe-main/yoloe-main/data/dog17/groundtruth.txt"
+annotations_dir = "/test_docker/yoloe-main/yoloe-main/data/dog17/annotations"
+visuals_dir = os.path.join(annotations_dir, "visuals")
+
+os.makedirs(annotations_dir, exist_ok=True)
+os.makedirs(visuals_dir, exist_ok=True)
+
+# --- Settings ---
+class_id = 0  # single class
+class_name = "dog"
+
+# --- Load ground truth boxes ---
+with open(groundtruth_path, "r") as f:
+    gt_lines = [line.strip() for line in f if line.strip()]
+
+# Parse into list of [x1, y1, x2, y2]
+gt_boxes_per_frame = []
+for line in gt_lines:
+    parts = line.split(",")
+    if len(parts) != 4:
+        continue
+    x, y, w, h = map(float, parts)
+    x1 = x
+    y1 = y
+    x2 = x + w
+    y2 = y + h
+    gt_boxes_per_frame.append([x1, y1, x2, y2])
+
+# --- Helper for numeric sort ---
+def extract_index(fname):
+    m = re.search(r'(\d+)', fname)
+    return int(m.group(1)) if m else -1
+
+# --- Collect annotations ---
+annotations = []
+
+# Gather and sort frame filenames (jpg/jpeg/png) numerically
+frame_files = [
+    f for f in os.listdir(frames_dir)
+    if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+]
+frame_files = sorted(frame_files, key=extract_index)
+
+if len(frame_files) != len(gt_boxes_per_frame):
+    print(f"Warning: number of frames ({len(frame_files)}) != number of GT lines ({len(gt_boxes_per_frame)}). "
+          f"Using min of both.")
+count = min(len(frame_files), len(gt_boxes_per_frame))
+
+for idx in range(count):
+    img_name = frame_files[idx]
+    img_path = os.path.join(frames_dir, img_name)
+    img = Image.open(img_path).convert("RGB")
+
+    box = gt_boxes_per_frame[idx]
+    x1, y1, x2, y2 = box
+    # Clamp to image bounds
+    w_img, h_img = img.size
+    x1 = max(0, min(x1, w_img))
+    y1 = max(0, min(y1, h_img))
+    x2 = max(0, min(x2, w_img))
+    y2 = max(0, min(y2, h_img))
+    box_clamped = [x1, y1, x2, y2]
+
+    # Save annotation entry
+    annotations.append({
+        "image_id": img_name,
+        "boxes": [box_clamped],
+        "classes": [class_id]
+    })
+
+    # Visualization
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([x1, y1, x2, y2], outline="green", width=3)
+    try:
+        font = ImageFont.load_default()
+    except Exception:
+        font = None
+    text_pos = (x1, max(y1 - 10, 0))
+    draw.text(text_pos, class_name, fill="green", font=font)
+    img.save(os.path.join(visuals_dir, img_name))
+
+# --- Save all annotations to JSON ---
+output_json = os.path.join(annotations_dir, "ground_truths.json")
+with open(output_json, "w") as f:
+    json.dump(annotations, f, indent=2)
+
+print(f"\n✅ Done! Saved {len(annotations)} ground truth entries to:")
+print(f"   → {output_json}")
+print(f" Visualizations saved to:")
+print(f"   → {visuals_dir}/")
+
+
+
+import os
+import json
+from PIL import Image, ImageDraw
+import numpy as np
+import torch
+from torchvision.ops import nms
+from ultralytics import YOLOE
+from ultralytics.trackers import register_tracker
+
+# --- Paths ---
+frames_dir = "/test_docker/yoloe-main/yoloe-main/data/person4/frames_clean"
+annotations_dir = "/test_docker/yoloe-main/yoloe-main/data/person4/annotations"
+visuals_dir = os.path.join(annotations_dir, "visuals")
+
+os.makedirs(annotations_dir, exist_ok=True)
+os.makedirs(visuals_dir, exist_ok=True)
+
+# --- Load model ---
+model = YOLOE('yoloe-v8l-seg.pt')
+register_tracker(model, persist=True) 
+model.to('cuda' if torch.cuda.is_available() else 'cpu')
+class_names = ['person']
+model.set_classes(class_names, model.get_text_pe(class_names))
+car_class_id = 0  # 'car' is index 0
+
+# --- Collect pseudo ground truth annotations ---
+annotations = []
+
+for img_name in sorted(os.listdir(frames_dir)):
+    if not img_name.lower().endswith('.png'):
+        continue
+
+    img_path = os.path.join(frames_dir, img_name)
+    img = Image.open(img_path).convert("RGB")
+
+    # --- Predict ---
+    result = model.predict(img, conf=0.3, iou=0.9, verbose=False)[0]
+    boxes = result.boxes.xyxy.cpu().numpy()
+    scores = result.boxes.conf.cpu().numpy()
+    classes = result.boxes.cls.cpu().numpy().astype(int)
+
+    # --- Filter to 'car' class ---
+    car_boxes = boxes[classes == car_class_id]
+    car_scores = scores[classes == car_class_id]
+
+    if len(car_boxes) == 0:
+        continue  # skip images with no car prediction
+
+    # --- Apply NMS to remove overlapping boxes ---
+    car_boxes_tensor = torch.tensor(car_boxes, dtype=torch.float32)
+    car_scores_tensor = torch.tensor(car_scores, dtype=torch.float32)
+    keep = nms(car_boxes_tensor, car_scores_tensor, iou_threshold=0.5)
+    car_boxes_nms = car_boxes_tensor[keep].numpy()
+
+    # --- Save annotation ---
+    annotations.append({
+        "image_id": img_name,
+        "boxes": car_boxes_nms.tolist(),
+        "classes": [car_class_id] * len(car_boxes_nms)
+    })
+
+    # --- Save visualization ---
+    draw = ImageDraw.Draw(img)
+    for box in car_boxes_nms:
+        x1, y1, x2, y2 = box
+        draw.rectangle([x1, y1, x2, y2], outline="green", width=3)
+        draw.text((x1, y1 - 10), "person", fill="green")
+    img.save(os.path.join(visuals_dir, img_name))
+
+# --- Save all annotations to JSON ---
+output_json = os.path.join(annotations_dir, "ground_truths.json")
+with open(output_json, "w") as f:
+    json.dump(annotations, f, indent=2)
+
+print(f"\n✅ Done! Saved {len(annotations)} pseudo-ground truth entries to:")
+print(f"   → {output_json}")
+print(f" Visualizations saved to:")
+print(f"   → {visuals_dir}/")
